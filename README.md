@@ -492,7 +492,7 @@ The included `.gitignore` should contain:
 
 ## Ports
 
-No ports are published by default for a normal shell, Claude Code, or OpenCode.
+No ports are opened by default for a normal shell, Claude Code, or OpenCode.
 
 For example:
 
@@ -508,7 +508,7 @@ agent claude
 agent opencode
 ```
 
-publish no ports unless explicitly requested.
+open no ports unless explicitly requested (see below).
 
 ### Codex ports
 
@@ -518,95 +518,18 @@ When running:
 agent codex
 ```
 
-the launcher automatically publishes the authentication ports when
+the launcher automatically starts sshd and opens ports when
 `~/.agent-container/.codex/auth.json` does not exist:
-
-```text
-container 22
-container 1455
-```
-
-Pass `--no-codex-auth` to publish neither port and prevent `sshd` from starting.
-The launcher applies the same behavior automatically when
-`~/.agent-container/.codex/auth.json` exists, because Codex can use the
-persisted login without starting the authentication callback flow.
-
-Port `1455` is mapped to host port `1455` by default.
-
-SSH port selection is automatic. The launcher searches for a free port
-beginning at:
-
-```text
-2222
-```
-
-For example:
 
 ```text
 host 2222 -> container 22
 host 1455 -> container 1455
 ```
 
-The launcher prints the selected mappings before starting the container.
+Pass `--no-codex-auth` to disable this behavior. See "SSH tunnel for Codex authentication"
+below for more information.
 
-Both automatic mappings bind to `127.0.0.1` and are not exposed on other host
-network interfaces. Additional ports supplied with `-p` retain the bind address
-specified by the user.
-
-## Custom SSH port
-
-Specify the desired host SSH port:
-
-```bash
-agent --ssh-port 2200 codex
-```
-
-This maps:
-
-```text
-host 2200 -> container 22
-```
-
-You can also set:
-
-```bash
-export AI_AGENT_SSH_PORT=2200
-```
-
-## Custom Codex callback port
-
-The default host callback port is:
-
-```text
-1455
-```
-
-Override it with:
-
-```bash
-agent --codex-port 1456 codex
-```
-
-or:
-
-```bash
-export AI_AGENT_CODEX_PORT=1456
-```
-
-The container-side port remains `1455`.
-
-## Disable Codex authentication support
-
-Disable the SSH tunnel, callback port, and `sshd` startup:
-
-```bash
-agent --no-codex-auth codex
-```
-
-This is also the automatic behavior when
-`~/.agent-container/.codex/auth.json` exists.
-
-## Additional ports
+## Opening custom ports
 
 Publish application ports using `-p` or `--port`.
 
@@ -652,44 +575,254 @@ agent -p 127.0.0.1:3000:3000 claude
 
 Binding development ports to `127.0.0.1` is recommended when they do not need to be reachable from other machines.
 
-## SSH tunnel for Codex authentication
+## Example workflow
 
-The image contains both:
+Build the environment:
 
-```text
-openssh-client
-openssh-server
+```bash
+agent-build
 ```
 
-By default, the container entrypoint starts `sshd` only when the container is
-launched in Codex mode with `agent codex` and no persisted
-`~/.agent-container/.codex/auth.json` exists. Its one purpose is to let the user
-open an SSH tunnel for the Codex authentication callback. It does not start for
-the default shell, Claude Code, OpenCode, or other commands. Passing
-`--no-codex-auth`, or having a persisted Codex login, also prevents it from
-starting in Codex mode. It is not intended or needed for general remote shell
-access or any other workflow.
+Open a project:
 
-The password for the tunnel is printed when the container starts. For example,
-when the selected host port is `2222`, open the tunnel as `root` with:
+```bash
+cd ~/src/my-app
+```
+
+Start Codex:
+
+```bash
+agent codex
+```
+
+From another terminal:
+
+```bash
+cd ~/src/my-app
+agent
+```
+
+This opens another Bash shell in the same running container.
+
+Run tests from a third terminal:
+
+```bash
+cd ~/src/my-app
+agent exec npm test
+```
+
+Inspect Git:
+
+```bash
+agent exec git status
+```
+
+Check the container:
+
+```bash
+agent status
+```
+
+Stop it:
+
+```bash
+agent stop
+```
+
+## Repository safety
+
+Because host-mounted repositories can have ownership that differs from the root user inside the container, the image configures Git with:
+
+```bash
+git config --system --add safe.directory '*'
+```
+
+This avoids Git's `dubious ownership` error in mounted workspaces.
+
+Only use this configuration in an environment where mounting arbitrary untrusted repositories is acceptable.
+
+## Security notes
+
+This container is intended as an AI coding-agent sandbox, but it is not automatically a strong security boundary.
+
+AI coding agents can execute shell commands and modify files available to the container.
+
+Be especially careful when exposing:
+
+```text
+Docker socket
+SSH credentials
+API credentials
+cloud credentials
+production databases
+Kubernetes credentials
+host filesystem paths
+```
+
+The default setup intentionally avoids mounting the Docker socket.
+
+Persistent agent state may contain sensitive tokens. Keep these directories private:
+
+```text
+~/.agent-container/.codex
+~/.agent-container/.claude
+~/.agent-container/.config/opencode
+~/.agent-container/.local/share/opencode
+```
+
+Only the shared instruction files in these directories are managed by Git; all
+other contents are ignored.
+
+## SSH tunnel for Codex authentication
+
+When Codex first starts it displays this message.
+
+```
+  Welcome to Codex, OpenAI's command-line coding agent
+
+  Sign in with ChatGPT to use Codex as part of your paid plan
+  or connect an API key for usage-based billing
+
+> 1. Sign in with ChatGPT
+     Usage included with Plus, Pro, Business, and Enterprise plans
+
+  2. Sign in with Device Code
+     Sign in from another device with a one-time code
+
+  3. Provide your own API key
+     Pay for what you use
+```
+
+I don't have a Device Code or API key, but I can sign in with ChatGPT. If I choose "Sign
+in with ChatGPT", it displays a link to open in my web browser. After opening the page
+and singing in, it tries to open localhost:1455, which go nowhere because I'm not running
+Codex on the host, I'm running it in an isolated container. To fix that, I needed to use
+ssh tunneling. This is how it works.
+
+By default, the container starts `sshd` when the container is launched in Codex mode with
+`agent codex` and `~/.agent-container/.codex/auth.json` does not exist. It does not start
+for the default shell, Claude Code, OpenCode, or other commands. Passing
+`--no-codex-auth`, also prevents it from starting. It is not intended or needed for
+general remote shell access or any other workflow.
+
+The password for the tunnel is random and printed when the container starts. You might
+have to scroll the Terminal window because codex clears the screen.
+
+```
+SSH:   localhost:2222 -> container:22
+Codex: localhost:1455 -> container:1455
+
+============================================================
+ SSH credentials (randomly generated)
+------------------------------------------------------------
+ User:     root
+ Password: j2zWKDiDmkw6fWamemvoIb4iaGaQju9HF25nVuGZKAc
+ Port:     22
+============================================================
+
+
+             _._:=++==+,_
+         _=,/*\+/+\=||=_ _"+_
+       ,|*|+**"^`   `"*`"~=~||+
+      ;*_\*',,_            /*|;|,
+     \^;/'^|\`\\            ".|\\,
+    ~* +`  |*/;||,           '.\||,
+   +^"-*    '\|*/"|_          ! |/|
+   ||_|`     ,//|;|*            "`|
+   |=~'`    ;||^\|".~++++++_+, =" |
+    _~;*  _;+` /* |"|___.:,,,|/,/,|
+    \^_"^ ^\,./`   `^*''* ^*"/,;_/
+     *^, ", `              ,'/*_|
+       ^\,`\+_          _=_+|_+"
+         ^*,\_!*+:;=;;.=*+_,|*
+           `*"*|~~___,_;+*"
+
+
+  Welcome to Codex, OpenAI's command-line coding agent
+
+  Sign in with ChatGPT to use Codex as part of your paid plan
+  or connect an API key for usage-based billing
+```
+
+To connect to this container, run this command to create an ssh tunnel.
 
 ```bash
 ssh -p 2222 -L 1455:localhost:1455 root@localhost
 ```
 
-The automatic SSH mapping is bound to `127.0.0.1`. The password is intended for
-this local development environment and should be changed before exposing SSH
-through a custom Docker argument or another network path.
+If it says this.
 
-SSH host keys are generated during the Docker image build so that newly created containers from the same image retain the same SSH server identity.
+```
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+IT IS POSSIBLE THAT SOMEONE IS DOING SOMETHING NASTY!
+```
 
-Rebuilding the image from scratch generates new host keys.
+Then run this and then try the tunnel again.
 
-The SSH server configuration lives under:
+```
+ssh-keygen -R "[localhost]:2222"
+```
+
+SSH host keys are generated during the Docker image build so that newly created containers from the same image retain the same SSH server identity. Rebuilding the image from scratch generates new host keys.
+
+Once you login over ssh, then open the link in a web browser and sign in. Once you are signed in you can close the ssh tunnel. However, the ports will still be open. If you want to close the ports, just control-c in the codex window and start it again. The authentication will be persisted on the host.
+
+## Custom SSH port
+
+Specify the desired host SSH port:
+
+```bash
+agent --ssh-port 2200 codex
+```
+
+This maps:
 
 ```text
-/etc/ssh/sshd_config
+host 2200 -> container 22
 ```
+
+You can also set:
+
+```bash
+export AI_AGENT_SSH_PORT=2200
+```
+
+## Custom Codex callback port
+
+The default host callback port is:
+
+```text
+1455
+```
+
+Override it with:
+
+```bash
+agent --codex-port 1456 codex
+```
+
+or:
+
+```bash
+export AI_AGENT_CODEX_PORT=1456
+```
+
+The container-side port remains `1455`.
+
+I don't know why you'd do this. But Codex thought it was useful to add. So there it is.
+
+## Disable Codex authentication support
+
+Disable the SSH tunnel, callback port, and `sshd` startup:
+
+```bash
+agent --no-codex-auth codex
+```
+
+This is also the automatic behavior when
+`~/.agent-container/.codex/auth.json` exists.
 
 ## Docker access
 
@@ -792,104 +925,6 @@ Example:
 ```bash
 export AI_AGENT_CODEX_PORT=1456
 ```
-
-## Example workflow
-
-Build the environment:
-
-```bash
-agent-build
-```
-
-Open a project:
-
-```bash
-cd ~/src/my-app
-```
-
-Start Codex:
-
-```bash
-agent codex
-```
-
-From another terminal:
-
-```bash
-cd ~/src/my-app
-agent
-```
-
-This opens another Bash shell in the same running container.
-
-Run tests from a third terminal:
-
-```bash
-cd ~/src/my-app
-agent exec npm test
-```
-
-Inspect Git:
-
-```bash
-agent exec git status
-```
-
-Check the container:
-
-```bash
-agent status
-```
-
-Stop it:
-
-```bash
-agent stop
-```
-
-## Repository safety
-
-Because host-mounted repositories can have ownership that differs from the root user inside the container, the image configures Git with:
-
-```bash
-git config --system --add safe.directory '*'
-```
-
-This avoids Git's `dubious ownership` error in mounted workspaces.
-
-Only use this configuration in an environment where mounting arbitrary untrusted repositories is acceptable.
-
-## Security notes
-
-This container is intended as an AI coding-agent sandbox, but it is not automatically a strong security boundary.
-
-AI coding agents can execute shell commands and modify files available to the container.
-
-Be especially careful when exposing:
-
-```text
-Docker socket
-SSH credentials
-API credentials
-cloud credentials
-production databases
-Kubernetes credentials
-host filesystem paths
-```
-
-The default setup intentionally avoids mounting the Docker socket.
-
-Persistent agent state may contain sensitive tokens. Keep these directories private:
-
-```text
-~/.agent-container/.codex
-~/.agent-container/.claude
-~/.agent-container/.config/opencode
-~/.agent-container/.local/share/opencode
-```
-
-Only the shared instruction files in these directories are managed by Git; all
-other contents are ignored.
 
 ## License
 
