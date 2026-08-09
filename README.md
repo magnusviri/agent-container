@@ -21,11 +21,18 @@ It provides a consistent toolchain for:
 * networking
 * shell/static-analysis utilities
 
-The container can be launched from **any project directory** just by typing `agent` in the Terminal. The current directory is mounted as `/workspace`, while AI-agent configuration and authentication state persist outside the disposable container.
+The container can be launched from **any project directory** just by typing
+`agent` in a terminal. The current directory is mounted as `/workspace`, while
+AI-agent configuration and authentication state persist outside the disposable
+container.
 
-The image is about 4 GB.
+The final image size varies with the host platform and selected dependency
+versions but is about 4 GB on my computer.
 
-_Note... I started with a simple setup then I used ChatGPT and it vastly improved it but then I pointed this very agent-container at it's own repo and now look at it. It absolutely blew up in complexity. That is what I call recursive improvement._
+_Side note, this started as a simple setup. Then I used ChatGPT to vastly improve
+it. And then I pointed this very agent-container at it's own repo and now look at it now.
+It absolutely blew up in complexity and functionality. That is what I call recursive
+improvement._
 
 ## Features
 
@@ -85,37 +92,12 @@ Docker CLI
 Runtime versions are managed by `mise` and pinned by default in the
 `Dockerfile`. An optional `versions.env` file can override those defaults.
 
-## Directory layout
+## Requirements
 
-The default installation location is:
-
-```text
-~/.agent-container/
-├── Dockerfile
-├── versions.env_example
-├── versions.env (optional)
-├── agent
-├── agent-build
-├── agent-entrypoint
-├── .gitignore
-│
-├── .codex/
-│   └── AGENTS.md
-├── .claude/
-│   └── CLAUDE.md -> ../.codex/AGENTS.md
-├── .config/
-│   └── opencode/
-│       └── AGENTS.md -> ../../.codex/AGENTS.md
-└── .local/
-    └── share/
-        └── opencode/ (runtime data, created automatically)
-```
-
-The agent configuration directories are managed by Git so they can provide the
-same instructions to each tool. `.codex/AGENTS.md` is the canonical file;
-Claude Code's `CLAUDE.md` and OpenCode's `AGENTS.md` are relative symbolic
-links to it. All other configuration and runtime files in these directories are
-ignored.
+Install Docker Engine or Docker Desktop and make sure its daemon is running.
+The host also needs Bash, Git, and either `sha256sum` (common on Linux) or
+`shasum` (included with macOS). Automatic SSH-port selection also requires one
+of `lsof`, `ss`, or `nc` on the host.
 
 ## Installation
 
@@ -124,6 +106,9 @@ Clone the repository into:
 ```bash
 git clone https://github.com/magnusviri/agent-container.git ~/.agent-container
 ```
+
+Note, installing it at ~/.agent-container makes it easier to to enable persistent auth
+files and other things. This can be configured with environment variables (see below).
 
 Make the scripts executable:
 
@@ -173,51 +158,6 @@ Override it with:
 AI_AGENT_IMAGE=my-agent:latest agent-build
 ```
 
-## Version configuration
-
-The versions of Debian, the language runtimes, and the coding agents are pinned
-in the `Dockerfile`. These pins make builds predictable and repeatable. You do
-not need a `versions.env` file unless you want to override one or more of those
-defaults.
-
-To create an override file, copy the provided example:
-
-```bash
-cp ~/.agent-container/versions.env_example ~/.agent-container/versions.env
-```
-
-Then uncomment and change only the versions you want to override. Commented or
-omitted settings continue to use the versions pinned in the `Dockerfile`. For
-example:
-
-```dotenv
-CODEX_VERSION=0.147.0
-```
-
-Many of the tools also accept `latest` instead of a specific version:
-
-```dotenv
-CODEX_VERSION=latest
-```
-
-Using `latest` makes builds less stable because the installed version can
-change whenever a new release is published. For that reason, the `Dockerfile`
-pins every version by default. If you choose `latest`, rebuild without the
-Docker cache to ensure the newest release is installed:
-
-```bash
-agent-build --no-cache
-```
-
-The `versions.env` file is intentionally ignored by Git. Delete it to return to
-all of the versions pinned in the `Dockerfile`.
-
-After changing an exact-version override, rebuild the image normally:
-
-```bash
-agent-build
-```
-
 ## Basic usage
 
 Move into any project:
@@ -238,16 +178,11 @@ The launcher runs Codex with `--sandbox danger-full-access` by default because
 the container provides the outer isolation boundary. Pass an explicit
 `--sandbox` (or `-s`) option after `codex` to override this default.
 
-When Codex requires authentication, open another terminal and create an SSH
-tunnel for the authentication callback:
-
-```bash
-ssh -p 2222 -L 1455:localhost:1455 root@localhost
-```
-
-Keep the SSH session open while completing authentication. This command uses
-the default SSH port. If the launcher selected a different SSH port, or you
-supplied `--ssh-port`, replace `2222` with that port.
+When Codex requires authentication, select the ChatGPT sign-in option and open
+the URL it displays. The launcher maps the callback listener to
+`127.0.0.1:1455` on the host, so the browser can complete a normal local login.
+See [Codex authentication](#codex-authentication) for the port and SSH-tunnel
+details.
 
 ### Claude Code
 
@@ -478,7 +413,7 @@ All three tools still have access to their persistent state.
 These directories can contain sensitive authentication material. Git tracks
 only their shared instruction files and ignores all other contents.
 
-The included `.gitignore` should contain:
+The included `.gitignore` uses these rules:
 
 ```gitignore
 .codex/*
@@ -492,7 +427,7 @@ The included `.gitignore` should contain:
 
 ## Ports
 
-No ports are opened by default for a normal shell, Claude Code, or OpenCode.
+No ports are published by default for a normal shell, Claude Code, or OpenCode.
 
 For example:
 
@@ -508,7 +443,7 @@ agent claude
 agent opencode
 ```
 
-open no ports unless explicitly requested (see below).
+publish no ports unless explicitly requested (see below).
 
 ### Codex ports
 
@@ -518,7 +453,7 @@ When running:
 agent codex
 ```
 
-the launcher automatically starts sshd and opens ports when
+the launcher automatically starts `sshd` and publishes ports when
 `~/.agent-container/.codex/auth.json` does not exist:
 
 ```text
@@ -526,8 +461,9 @@ host 2222 -> container 22
 host 1455 -> container 1455
 ```
 
-Pass `--no-codex-auth` to disable this behavior. See "SSH tunnel for Codex authentication"
-below for more information.
+Both automatic mappings bind to `127.0.0.1`, so they are reachable only from
+the Docker host. Pass `--no-codex-auth` to disable this behavior. See
+[Codex authentication](#codex-authentication) below for more information.
 
 ## Opening custom ports
 
@@ -573,7 +509,9 @@ You can also specify a bind address:
 agent -p 127.0.0.1:3000:3000 claude
 ```
 
-Binding development ports to `127.0.0.1` is recommended when they do not need to be reachable from other machines.
+Binding development ports to `127.0.0.1` is recommended when they do not need
+to be reachable from other machines. Without an explicit bind address, Docker
+publishes the port on all host interfaces by default.
 
 ## Example workflow
 
@@ -629,6 +567,86 @@ Stop it:
 agent stop
 ```
 
+## Directory layout
+
+The default installation location is:
+
+```text
+~/.agent-container/
+├── Dockerfile
+├── versions.env_example
+├── versions.env (optional)
+├── agent
+├── agent-build
+├── agent-entrypoint
+├── README.md
+├── LICENSE
+├── .gitignore
+│
+├── .codex/
+│   └── AGENTS.md
+├── .claude/
+│   └── CLAUDE.md -> ../.codex/AGENTS.md
+├── .config/
+│   └── opencode/
+│       └── AGENTS.md -> ../../.codex/AGENTS.md
+└── .local/
+    └── share/
+        └── opencode/ (runtime data, created automatically)
+```
+
+The agent configuration directories are managed by Git so they can provide the
+same instructions to each tool. `.codex/AGENTS.md` is the canonical file;
+Claude Code's `CLAUDE.md` and OpenCode's `AGENTS.md` are relative symbolic
+links to it. All other configuration and runtime files in these directories are
+ignored.
+
+## Version configuration
+
+The versions of Debian, the language runtimes, and the coding agents are pinned
+in the `Dockerfile`. These pins reduce version drift between builds, although
+the mutable Debian image tag and unpinned operating-system packages mean builds
+are not fully reproducible. You do not need a `versions.env` file unless you
+want to override one or more defaults.
+
+To create an override file, copy the provided example:
+
+```bash
+cp ~/.agent-container/versions.env_example ~/.agent-container/versions.env
+```
+
+Then uncomment and change only the versions you want to override. Commented or
+omitted settings continue to use the versions pinned in the `Dockerfile`. For
+example:
+
+```dotenv
+CODEX_VERSION=0.147.0
+```
+
+Many of the tools also accept `latest` instead of a specific version:
+
+```dotenv
+CODEX_VERSION=latest
+```
+
+Using `latest` makes builds less stable because the installed version can
+change whenever a new release is published. For that reason, the `Dockerfile`
+pins every version by default. If you choose `latest`, rebuild without the
+Docker cache to ensure the newest release is installed:
+
+```bash
+agent-build --no-cache
+```
+
+The `versions.env` file is intentionally ignored by Git. Delete it to return to
+all of the versions pinned in the `Dockerfile`.
+
+After changing an exact-version override, rebuild the image normally:
+
+```bash
+agent-build
+```
+
 ## Repository safety
 
 Because host-mounted repositories can have ownership that differs from the root user inside the container, the image configures Git with:
@@ -673,7 +691,7 @@ Persistent agent state may contain sensitive tokens. Keep these directories priv
 Only the shared instruction files in these directories are managed by Git; all
 other contents are ignored.
 
-## SSH tunnel for Codex authentication
+## Codex authentication
 
 When Codex first starts it displays this message.
 
@@ -699,11 +717,9 @@ and singing in, it tries to open localhost:1455, which go nowhere because I'm no
 Codex on the host, I'm running it in an isolated container. To fix that, I needed to use
 ssh tunneling. This is how it works.
 
-By default, the container starts `sshd` when the container is launched in Codex mode with
-`agent codex` and `~/.agent-container/.codex/auth.json` does not exist. It does not start
-for the default shell, Claude Code, OpenCode, or other commands. Passing
-`--no-codex-auth`, also prevents it from starting. It is not intended or needed for
-general remote shell access or any other workflow.
+The container starts `sshd` when the container is launched with `agent codex` and
+`~/.agent-container/.codex/auth.json` does not exist. Passing `--no-codex-auth`, prevents
+it from starting.
 
 The password for the tunnel is random and printed when the container starts. You might
 have to scroll the Terminal window because codex clears the screen.
@@ -744,13 +760,14 @@ Codex: localhost:1455 -> container:1455
   or connect an API key for usage-based billing
 ```
 
-To connect to this container, run this command to create an ssh tunnel.
+Then, in another terminal, use the SSH port printed by the launcher (2222 in
+this example):
 
 ```bash
 ssh -p 2222 -L 1455:localhost:1455 root@localhost
 ```
 
-If it says this.
+If it says the key has changed:
 
 ```
 @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
@@ -759,15 +776,19 @@ If it says this.
 IT IS POSSIBLE THAT SOMEONE IS DOING SOMETHING NASTY!
 ```
 
-Then run this and then try the tunnel again.
+Then reset the saved key and try the tunnel again.
 
-```
+```bash
 ssh-keygen -R "[localhost]:2222"
 ```
 
-SSH host keys are generated during the Docker image build so that newly created containers from the same image retain the same SSH server identity. Rebuilding the image from scratch generates new host keys.
+SSH host keys are generated during the image build, so containers created from
+one image share an SSH server identity. Rebuilding the image without its cached
+SSH-key layer can generate a new identity.
 
-Once you login over ssh, then open the link in a web browser and sign in. Once you are signed in you can close the ssh tunnel. However, the ports will still be open. If you want to close the ports, just control-c in the codex window and start it again. The authentication will be persisted on the host.
+Credentials persist in `~/.agent-container/.codex`. On later runs the launcher
+detects `auth.json`, does not publish either authentication port, and does not
+start `sshd`.
 
 ## Custom SSH port
 
@@ -811,11 +832,13 @@ export AI_AGENT_CODEX_PORT=1456
 
 The container-side port remains `1455`.
 
-I don't know why you'd do this. But Codex thought it was useful to add. So there it is.
+Because Codex redirects the browser to local port 1455, changing the host port
+is mainly useful when reserving port 1455 for the SSH-tunnel method described
+above.
 
 ## Disable Codex authentication support
 
-Disable the SSH tunnel, callback port, and `sshd` startup:
+Disable the SSH endpoint, callback port, and `sshd` startup:
 
 ```bash
 agent --no-codex-auth codex
@@ -826,7 +849,8 @@ This is also the automatic behavior when
 
 ## Docker access
 
-The image contains the Docker CLI, but the host Docker socket is intentionally **not mounted by default**.
+The image contains the Docker CLI, but the host Docker socket is intentionally
+**not mounted by default**.
 
 If an agent needs to control the host Docker daemon:
 
@@ -928,6 +952,4 @@ export AI_AGENT_CODEX_PORT=1456
 
 ## License
 
-Choose an appropriate license before publishing the repository.
-
-MIT is a common choice for a small development-tooling repository.
+This project is licensed under the [MIT License](LICENSE).
