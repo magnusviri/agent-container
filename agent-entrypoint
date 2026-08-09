@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+/usr/sbin/sshd
+
+if [[ $# -eq 0 ]]; then
+  exec bash
+fi
+
+exec "$@"

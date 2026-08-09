@@ -1,0 +1,583 @@
+#!/usr/bin/env bash
+set -eo pipefail
+
+# -----------------------------------------------------------------------------
+# Configuration
+# -----------------------------------------------------------------------------
+
+AGENT_HOME="${AI_AGENT_HOME:-$HOME/.agent-container}"
+IMAGE="${AI_AGENT_IMAGE:-agent-container:latest}"
+
+SSH_HOST_PORT="${AI_AGENT_SSH_PORT:-}"
+CODEX_HOST_PORT="${AI_AGENT_CODEX_PORT:-1455}"
+
+WORKSPACE="$(pwd -P)"
+
+WORKSPACE_ID="$(
+    printf '%s' "$WORKSPACE" \
+        | sha256sum \
+        | cut -c1-12
+)"
+
+CONTAINER_NAME="agent-${WORKSPACE_ID}"
+
+EXTRA_PORTS=()
+DOCKER_ARGS=()
+COMMAND=()
+PORT_ARGS=()
+RUN_ARGS=()
+
+PUBLISH_SSH=0
+PUBLISH_CODEX=0
+
+# -----------------------------------------------------------------------------
+# Help
+# -----------------------------------------------------------------------------
+
+usage() {
+    cat <<'EOF'
+Usage:
+  agent [options] [--] [command...]
+  agent exec [command...]
+  agent stop
+  agent status
+
+Behavior:
+  agent
+      If a container is already running for the current directory, attach to it
+      with an interactive Bash shell.
+
+      If no container is running, start a new container with Bash.
+
+  agent codex
+      Start Codex in a new agent container.
+
+      Codex mode automatically publishes:
+        container 22   -> an available host SSH port
+        container 1455 -> host port 1455
+
+      If host port 22 is free, it is used for SSH. Otherwise the launcher finds
+      an available port starting at 2222.
+
+  agent claude
+      Start Claude Code.
+
+  agent opencode
+      Start OpenCode.
+
+  agent exec COMMAND...
+      Execute COMMAND inside the running agent container for the current
+      workspace.
+
+      Examples:
+        agent exec bash
+        agent exec git status
+        agent exec npm test
+        agent exec bundle exec rspec
+
+  agent stop
+      Stop the running agent container for the current workspace.
+
+  agent status
+      Show whether an agent container is running for the current workspace.
+
+Options:
+  -p, --port PORT
+      Publish an additional port.
+
+      Examples:
+        -p 3000
+        -p 3000:3000
+        -p 8080:3000
+        -p 127.0.0.1:3000:3000
+
+      A single port such as:
+
+        -p 3000
+
+      is interpreted as:
+
+        -p 3000:3000
+
+  --ssh-port PORT
+      Host port to map to container SSH port 22.
+
+      This is only published automatically when running:
+
+        agent codex
+
+      If omitted, the launcher chooses port 22 when available, otherwise the
+      first available port starting at 2222.
+
+  --codex-port PORT
+      Host port mapped to container port 1455.
+
+      Default:
+        1455
+
+      This port is only published automatically when running:
+
+        agent codex
+
+  --no-ssh-port
+      Disable automatic SSH port publishing in Codex mode.
+
+  --no-codex-port
+      Disable automatic port 1455 publishing in Codex mode.
+
+  --docker-arg ARG
+      Pass an additional argument directly to docker run.
+
+      Can be specified multiple times.
+
+      Example:
+        agent \
+          --docker-arg --privileged \
+          codex
+
+  -h, --help
+      Show this help.
+
+Environment:
+  AI_AGENT_HOME
+      Agent configuration and persistent-state directory.
+
+      Default:
+        ~/.agent-container
+
+  AI_AGENT_IMAGE
+      Docker image to run.
+
+      Default:
+        agent-container:latest
+
+  AI_AGENT_SSH_PORT
+      Preferred host SSH port for Codex mode.
+
+      If unset, the launcher automatically finds an available port.
+
+  AI_AGENT_CODEX_PORT
+      Host port for the Codex callback.
+
+      Default:
+        1455
+
+Persistent state:
+  The following directories are mounted into every agent container:
+
+    ~/.agent-container/.codex
+        -> /root/.codex
+
+    ~/.agent-container/.claude
+        -> /root/.claude
+
+    ~/.agent-container/.opencode
+        -> /root/.opencode
+
+Workspace:
+  The current physical directory is mounted at:
+
+    /workspace
+
+Examples:
+  agent
+
+  agent codex
+
+  agent claude
+
+  agent opencode
+
+  agent -p 3000 codex
+
+  agent -p 3000 -p 5173 claude
+
+  agent --ssh-port 2222 codex
+
+  agent exec bash
+
+  agent exec git status
+
+  agent exec npm test
+
+  agent status
+
+  agent stop
+EOF
+}
+
+# -----------------------------------------------------------------------------
+# Helpers
+# -----------------------------------------------------------------------------
+
+port_is_available() {
+    local port="$1"
+
+    # macOS/Linux when lsof is available.
+    if command -v lsof >/dev/null 2>&1; then
+        ! lsof -nP \
+            -iTCP:"$port" \
+            -sTCP:LISTEN \
+            >/dev/null 2>&1
+
+        return
+    fi
+
+    # Linux fallback.
+    if command -v ss >/dev/null 2>&1; then
+        ! ss -ltn 2>/dev/null \
+            | awk '{print $4}' \
+            | grep -Eq "(^|:)$port$"
+
+        return
+    fi
+
+    # Last-resort TCP connection test.
+    if command -v nc >/dev/null 2>&1; then
+        ! nc -z 127.0.0.1 "$port" >/dev/null 2>&1
+        return
+    fi
+
+    # If we cannot test it, assume unavailable rather than risk a collision.
+    return 1
+}
+
+find_available_ssh_port() {
+    # Explicit override always wins.
+    if [[ -n "$SSH_HOST_PORT" ]]; then
+        printf '%s\n' "$SSH_HOST_PORT"
+        return
+    fi
+
+    local port=2222
+
+    while (( port <= 2299 )); do
+        if port_is_available "$port"; then
+            printf '%s\n' "$port"
+            return
+        fi
+
+        ((port++))
+    done
+
+    echo "Unable to find an available SSH host port between 2222 and 2299." >&2
+    exit 1
+}
+
+find_running_container() {
+    docker ps \
+        --filter "label=agent-container=true" \
+        --filter "label=agent-workspace=${WORKSPACE_ID}" \
+        --format '{{.ID}}' \
+        | head -n 1
+}
+
+find_existing_container() {
+    docker ps -a \
+        --filter "label=agent-container=true" \
+        --filter "label=agent-workspace=${WORKSPACE_ID}" \
+        --format '{{.ID}}' \
+        | head -n 1
+}
+
+require_running_container() {
+    local container
+    container="$(find_running_container)"
+
+    if [[ -z "$container" ]]; then
+        echo "No running agent container found for:" >&2
+        echo "  $WORKSPACE" >&2
+        exit 1
+    fi
+
+    printf '%s\n' "$container"
+}
+
+# -----------------------------------------------------------------------------
+# Parse arguments
+# -----------------------------------------------------------------------------
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -p|--port)
+            [[ $# -ge 2 ]] || {
+                echo "Missing value for $1" >&2
+                exit 1
+            }
+
+            EXTRA_PORTS+=("$2")
+            shift 2
+            ;;
+
+        --ssh-port)
+            [[ $# -ge 2 ]] || {
+                echo "Missing value for --ssh-port" >&2
+                exit 1
+            }
+
+            SSH_HOST_PORT="$2"
+            shift 2
+            ;;
+
+        --codex-port)
+            [[ $# -ge 2 ]] || {
+                echo "Missing value for --codex-port" >&2
+                exit 1
+            }
+
+            CODEX_HOST_PORT="$2"
+            shift 2
+            ;;
+
+        --no-ssh-port)
+            PUBLISH_SSH=-1
+            shift
+            ;;
+
+        --no-codex-port)
+            PUBLISH_CODEX=-1
+            shift
+            ;;
+
+        --docker-arg)
+            [[ $# -ge 2 ]] || {
+                echo "Missing value for --docker-arg" >&2
+                exit 1
+            }
+
+            DOCKER_ARGS+=("$2")
+            shift 2
+            ;;
+
+        -h|--help)
+            usage
+            exit 0
+            ;;
+
+        --)
+            shift
+            COMMAND=("$@")
+            break
+            ;;
+
+        *)
+            COMMAND=("$@")
+            break
+            ;;
+    esac
+done
+
+# -----------------------------------------------------------------------------
+# Built-in commands
+# -----------------------------------------------------------------------------
+
+if [[ ${#COMMAND[@]} -gt 0 ]]; then
+    case "${COMMAND[0]}" in
+        exec)
+            container="$(require_running_container)"
+
+            if [[ ${#COMMAND[@]} -eq 1 ]]; then
+                exec docker exec \
+                    --interactive \
+                    --tty \
+                    --workdir /workspace \
+                    "$container" \
+                    bash
+            fi
+
+            exec docker exec \
+                --interactive \
+                --tty \
+                --workdir /workspace \
+                "$container" \
+                "${COMMAND[@]:1}"
+            ;;
+
+        stop)
+            container="$(find_running_container)"
+
+            if [[ -z "$container" ]]; then
+                echo "No running agent container for:"
+                echo "  $WORKSPACE"
+                exit 0
+            fi
+
+            echo "Stopping agent container $container"
+            docker stop "$container"
+            exit 0
+            ;;
+
+        status)
+            container="$(find_running_container)"
+
+            if [[ -z "$container" ]]; then
+                echo "No agent container is running for:"
+                echo "  $WORKSPACE"
+                exit 1
+            fi
+
+            echo "Agent container is running:"
+            docker ps \
+                --filter "id=$container" \
+                --format '  ID:       {{.ID}}
+  Name:     {{.Names}}
+  Image:    {{.Image}}
+  Status:   {{.Status}}
+  Ports:    {{.Ports}}'
+
+            exit 0
+            ;;
+    esac
+fi
+
+# -----------------------------------------------------------------------------
+# Attach to an existing workspace container
+# -----------------------------------------------------------------------------
+
+if [[ ${#COMMAND[@]} -eq 0 ]]; then
+    RUNNING_CONTAINER="$(find_running_container)"
+
+    if [[ -n "$RUNNING_CONTAINER" ]]; then
+        echo "Attaching to agent container $RUNNING_CONTAINER"
+
+        exec docker exec \
+            --interactive \
+            --tty \
+            --workdir /workspace \
+            "$RUNNING_CONTAINER" \
+            bash
+    fi
+fi
+
+# -----------------------------------------------------------------------------
+# Prevent duplicate workspace containers
+# -----------------------------------------------------------------------------
+
+RUNNING_CONTAINER="$(find_running_container)"
+
+if [[ -n "$RUNNING_CONTAINER" ]]; then
+    echo "An agent container is already running for this workspace:"
+    echo "  $WORKSPACE"
+    echo
+    echo "Container:"
+    echo "  $RUNNING_CONTAINER"
+    echo
+    echo "Use one of:"
+    echo "  agent"
+    echo "  agent exec <command>"
+    echo "  agent stop"
+    exit 1
+fi
+
+# A stopped container should normally not exist because we use --rm, but remove
+# one if a previous Docker invocation left it behind.
+EXISTING_CONTAINER="$(find_existing_container)"
+
+if [[ -n "$EXISTING_CONTAINER" ]]; then
+    docker rm "$EXISTING_CONTAINER" >/dev/null
+fi
+
+# -----------------------------------------------------------------------------
+# Codex-specific port defaults
+# -----------------------------------------------------------------------------
+
+if [[ ${#COMMAND[@]} -gt 0 && "${COMMAND[0]}" == "codex" ]]; then
+    if [[ "$PUBLISH_SSH" != -1 ]]; then
+        PUBLISH_SSH=1
+    fi
+
+    if [[ "$PUBLISH_CODEX" != -1 ]]; then
+        PUBLISH_CODEX=1
+    fi
+else
+    PUBLISH_SSH=0
+    PUBLISH_CODEX=0
+fi
+
+# -----------------------------------------------------------------------------
+# Persistent state
+# -----------------------------------------------------------------------------
+
+mkdir -p \
+    "$AGENT_HOME/.codex" \
+    "$AGENT_HOME/.claude" \
+    "$AGENT_HOME/.opencode"
+
+# -----------------------------------------------------------------------------
+# docker run arguments
+# -----------------------------------------------------------------------------
+
+RUN_ARGS=(
+    --rm
+    --interactive
+    --tty
+    --init
+
+    --name "$CONTAINER_NAME"
+
+    --label "agent-container=true"
+    --label "agent-workspace=${WORKSPACE_ID}"
+    --label "agent-workspace-path=${WORKSPACE}"
+
+    --hostname ai-agent
+    --workdir /workspace
+
+    --volume "$WORKSPACE:/workspace"
+
+    --volume "$AGENT_HOME/.codex:/root/.codex"
+    --volume "$AGENT_HOME/.claude:/root/.claude"
+    --volume "$AGENT_HOME/.opencode:/root/.opencode"
+)
+
+# -----------------------------------------------------------------------------
+# Ports
+# -----------------------------------------------------------------------------
+
+PORT_ARGS=()
+
+if [[ "$PUBLISH_SSH" == 1 ]]; then
+    RESOLVED_SSH_HOST_PORT="$(find_available_ssh_port)"
+
+    PORT_ARGS+=(
+        --publish "${RESOLVED_SSH_HOST_PORT}:22"
+    )
+
+    echo "SSH:   localhost:${RESOLVED_SSH_HOST_PORT} -> container:22"
+fi
+
+if [[ "$PUBLISH_CODEX" == 1 ]]; then
+    PORT_ARGS+=(
+        --publish "${CODEX_HOST_PORT}:1455"
+    )
+
+    echo "Codex: localhost:${CODEX_HOST_PORT} -> container:1455"
+fi
+
+for port in "${EXTRA_PORTS[@]}"; do
+    if [[ "$port" != *:* ]]; then
+        port="${port}:${port}"
+    fi
+
+    PORT_ARGS+=(
+        --publish "$port"
+    )
+done
+
+# -----------------------------------------------------------------------------
+# Launch
+# -----------------------------------------------------------------------------
+
+if (( ${#COMMAND[@]} > 0 )); then
+    exec docker run \
+        "${RUN_ARGS[@]}" \
+        "${PORT_ARGS[@]}" \
+        "${DOCKER_ARGS[@]}" \
+        "$IMAGE" \
+        "${COMMAND[@]}"
+else
+    exec docker run \
+        "${RUN_ARGS[@]}" \
+        "${PORT_ARGS[@]}" \
+        "${DOCKER_ARGS[@]}" \
+        "$IMAGE"
+fi

@@ -1,0 +1,5 @@
+.codex/
+.claude/
+.opencode/
+.DS_Store
+.versions.env

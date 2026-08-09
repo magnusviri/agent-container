@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+AGENT_HOME="${AI_AGENT_HOME:-$HOME/.agent-container}"
+ENV_FILE="$AGENT_HOME/versions.env"
+IMAGE="${AI_AGENT_IMAGE:-agent-container:latest}"
+
+if [[ ! -f "$ENV_FILE" ]]; then
+  echo "Missing version file: $ENV_FILE" >&2
+  exit 1
+fi
+
+args=()
+
+while IFS='=' read -r key value; do
+  [[ -z "$key" ]] && continue
+  [[ "$key" == \#* ]] && continue
+  args+=(--build-arg "$key=$value")
+done < "$ENV_FILE"
+
+docker build \
+  "${args[@]}" \
+  --tag "$IMAGE" \
+  "$AGENT_HOME"
