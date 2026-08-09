@@ -1,35 +1,37 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ -z "${ROOT_PASSWORD:-}" ]]; then
-  ROOT_PASSWORD="$(
-    head -c 32 /dev/urandom \
-      | base64 \
-      | tr -d '\n=+/'
-  )"
-
-  PASSWORD_SOURCE="randomly generated"
-else
-  PASSWORD_SOURCE="provided by ROOT_PASSWORD"
-fi
-
-echo "root:${ROOT_PASSWORD}" | chpasswd
-
-echo
-echo "============================================================"
-echo " SSH credentials (${PASSWORD_SOURCE})"
-echo "------------------------------------------------------------"
-echo " User:     root"
-echo " Password: ${ROOT_PASSWORD}"
-echo " Port:     22"
-echo "============================================================"
-echo
-
-mkdir -p /run/sshd
-/usr/sbin/sshd
-
 if [[ $# -eq 0 ]]; then
   exec bash
+fi
+
+if [[ "$1" == "codex" ]]; then
+  if [[ -z "${ROOT_PASSWORD:-}" ]]; then
+    ROOT_PASSWORD="$(
+      head -c 32 /dev/urandom \
+        | base64 \
+        | tr -d '\n=+/'
+    )"
+
+    PASSWORD_SOURCE="randomly generated"
+  else
+    PASSWORD_SOURCE="provided by ROOT_PASSWORD"
+  fi
+
+  echo "root:${ROOT_PASSWORD}" | /usr/sbin/chpasswd
+
+  echo
+  echo "============================================================"
+  echo " SSH credentials (${PASSWORD_SOURCE})"
+  echo "------------------------------------------------------------"
+  echo " User:     root"
+  echo " Password: ${ROOT_PASSWORD}"
+  echo " Port:     22"
+  echo "============================================================"
+  echo
+
+  mkdir -p /run/sshd
+  /usr/sbin/sshd
 fi
 
 exec "$@"

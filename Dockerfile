@@ -145,6 +145,7 @@ COPY agent-entrypoint /usr/local/bin/agent-entrypoint
 RUN chmod 0755 /usr/local/bin/agent-entrypoint
 
 RUN set -eux; \
+    test -x /usr/sbin/chpasswd; \
     python --version; \
     pip --version; \
     ruby --version; \

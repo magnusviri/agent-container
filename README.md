@@ -611,7 +611,7 @@ openssh-server
 
 The container entrypoint starts `sshd` automatically.
 
-Connect as `root` using the password `code`. For example, when the selected host
+Connect as `root`. The password is printed when the container starts. For example, when the selected host
 port is `2222`:
 
 ```bash
