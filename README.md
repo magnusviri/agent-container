@@ -211,6 +211,10 @@ Then launch an agent.
 agent codex
 ```
 
+The launcher runs Codex with `--sandbox danger-full-access` by default because
+the container provides the outer isolation boundary. Pass an explicit
+`--sandbox` (or `-s`) option after `codex` to override this default.
+
 When Codex requires authentication, open another terminal and create an SSH
 tunnel for the authentication callback:
 

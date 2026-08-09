@@ -64,6 +64,9 @@ Behavior:
   agent codex
       Start Codex in a new agent container.
 
+      Codex defaults to --sandbox danger-full-access because the container
+      provides the outer isolation boundary. Pass --sandbox or -s to override.
+
       Codex mode automatically publishes:
         container 22   -> an available host SSH port
         container 1455 -> host port 1455
@@ -493,10 +496,29 @@ if [[ -n "$EXISTING_CONTAINER" ]]; then
 fi
 
 # -----------------------------------------------------------------------------
-# Codex-specific port defaults
+# Codex-specific defaults
 # -----------------------------------------------------------------------------
 
 if [[ ${#COMMAND[@]} -gt 0 && "${COMMAND[0]}" == "codex" ]]; then
+    CODEX_SANDBOX_CONFIGURED=0
+
+    for arg in "${COMMAND[@]:1}"; do
+        case "$arg" in
+            --sandbox|--sandbox=*|-s|-s?*|--dangerously-bypass-approvals-and-sandbox|--yolo)
+                CODEX_SANDBOX_CONFIGURED=1
+                break
+                ;;
+        esac
+    done
+
+    if [[ "$CODEX_SANDBOX_CONFIGURED" == 0 ]]; then
+        COMMAND=(
+            codex
+            --sandbox danger-full-access
+            "${COMMAND[@]:1}"
+        )
+    fi
+
     if [[ "$PUBLISH_SSH" != -1 ]]; then
         PUBLISH_SSH=1
     fi
