@@ -1,5 +1,9 @@
-.codex/
-.claude/
-.opencode/
+.codex/*
+!.codex/AGENTS.md
+.claude/*
+!.claude/CLAUDE.md
+.config/opencode/*
+!.config/opencode/AGENTS.md
+.local/share/opencode/*
 .DS_Store
 versions.env

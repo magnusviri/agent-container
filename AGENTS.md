@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-This repository builds and launches a reusable Docker environment for coding agents. The root-level `Dockerfile` defines the toolchain. `agent` is the main host-side launcher; `agent-build` converts `versions.env` entries into Docker build arguments; and `agent-entrypoint` starts SSH before executing the requested command. `versions.env_example` documents supported version pins, while `versions.env` supplies the local build values. Keep user-facing behavior and setup instructions synchronized with `README.md`. Runtime state under `.codex/`, `.claude/`, and `.opencode/` is local and must remain untracked.
+This repository builds and launches a reusable Docker environment for coding agents. The root-level `Dockerfile` defines the toolchain. `agent` is the main host-side launcher; `agent-build` converts `versions.env` entries into Docker build arguments; and `agent-entrypoint` starts SSH before executing the requested command. `versions.env_example` documents supported version pins, while `versions.env` supplies the local build values. Keep user-facing behavior and setup instructions synchronized with `README.md`. Runtime state under `.codex/`, `.claude/`, `.config/opencode/`, and `.local/share/opencode/` is local and must remain untracked except for the shared instruction files explicitly allowed by `.gitignore`.
 
 ## Build, Test, and Development Commands
 

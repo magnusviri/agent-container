@@ -130,9 +130,9 @@ RUN mkdir -p \
       /root/.ssh \
       /root/.codex \
       /root/.claude \
-      /root/.opencode \
       /root/.cache \
-      /root/.config \
+      /root/.config/opencode \
+      /root/.local/share/opencode \
       /workspace \
     && chmod 700 /root/.ssh \
     && ssh-keygen -A \

@@ -187,8 +187,11 @@ Persistent state:
     ~/.agent-container/.claude
         -> /root/.claude
 
-    ~/.agent-container/.opencode
-        -> /root/.opencode
+    ~/.agent-container/.config/opencode
+        -> /root/.config/opencode
+
+    ~/.agent-container/.local/share/opencode
+        -> /root/.local/share/opencode
 
 Workspace:
   The current physical directory is mounted at:
@@ -536,7 +539,8 @@ fi
 mkdir -p \
     "$AGENT_HOME/.codex" \
     "$AGENT_HOME/.claude" \
-    "$AGENT_HOME/.opencode"
+    "$AGENT_HOME/.config/opencode" \
+    "$AGENT_HOME/.local/share/opencode"
 
 # -----------------------------------------------------------------------------
 # docker run arguments
@@ -561,7 +565,8 @@ RUN_ARGS=(
 
     --volume "$AGENT_HOME/.codex:/root/.codex"
     --volume "$AGENT_HOME/.claude:/root/.claude"
-    --volume "$AGENT_HOME/.opencode:/root/.opencode"
+    --volume "$AGENT_HOME/.config/opencode:/root/.config/opencode"
+    --volume "$AGENT_HOME/.local/share/opencode:/root/.local/share/opencode"
 )
 
 if [[ "$CODEX_AUTH_ENABLED" == 0 ]]; then

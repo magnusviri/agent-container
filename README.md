@@ -21,11 +21,11 @@ It provides a consistent toolchain for:
 * networking
 * shell/static-analysis utilities
 
-The container can be launched from **any project directory**. The current directory is mounted as `/workspace`, while AI-agent configuration and authentication state persist outside the disposable container.
+The container can be launched from **any project directory** just by typing `agent` in the Terminal. The current directory is mounted as `/workspace`, while AI-agent configuration and authentication state persist outside the disposable container.
 
-The image is about 4.2 GB.
+The image is about 4 GB.
 
-__Note... I started with a simple setup then I used ChatGPT and it vastly improved it but then I pointed this very agent-container at it's own repo and now look at it. It absolutely blew up in complexity. That is what I call recursive improvement.__
+_Note... I started with a simple setup then I used ChatGPT and it vastly improved it but then I pointed this very agent-container at it's own repo and now look at it. It absolutely blew up in complexity. That is what I call recursive improvement._
 
 ## Features
 
@@ -100,11 +100,22 @@ The default installation location is:
 ├── .gitignore
 │
 ├── .codex/
+│   └── AGENTS.md
 ├── .claude/
-└── .opencode/
+│   └── CLAUDE.md -> ../.codex/AGENTS.md
+├── .config/
+│   └── opencode/
+│       └── AGENTS.md -> ../../.codex/AGENTS.md
+└── .local/
+    └── share/
+        └── opencode/ (runtime data, created automatically)
 ```
 
-The three hidden agent directories are created automatically and should not be committed to Git.
+The agent configuration directories are managed by Git so they can provide the
+same instructions to each tool. `.codex/AGENTS.md` is the canonical file;
+Claude Code's `CLAUDE.md` and OpenCode's `AGENTS.md` are relative symbolic
+links to it. All other configuration and runtime files in these directories are
+ignored.
 
 ## Installation
 
@@ -370,7 +381,8 @@ Persistent AI-agent state is stored on the host and is not removed.
 
 ## Persistent agent state
 
-All three agent state directories are mounted into every agent container.
+The agent configuration and state directories are mounted into every agent
+container.
 
 ### Codex
 
@@ -384,7 +396,8 @@ is mounted at:
 /root/.codex
 ```
 
-Copy the contents of `add-to-dot-codex/` into `~/.agent-container/.codex`.
+The repository-managed `AGENTS.md` in this directory contains the shared
+container instructions.
 
 ### Claude Code
 
@@ -398,17 +411,39 @@ is mounted at:
 /root/.claude
 ```
 
+Its `CLAUDE.md` is a symbolic link to `.codex/AGENTS.md`.
+
 ### OpenCode
 
+OpenCode's global configuration directory:
+
 ```text
-~/.agent-container/.opencode
+~/.agent-container/.config/opencode
 ```
 
 is mounted at:
 
 ```text
-/root/.opencode
+/root/.config/opencode
 ```
+
+Its `AGENTS.md` is a symbolic link to `../../.codex/AGENTS.md`.
+
+OpenCode's application data directory:
+
+```text
+~/.agent-container/.local/share/opencode
+```
+
+is mounted at:
+
+```text
+/root/.local/share/opencode
+```
+
+OpenCode stores authentication, logs, sessions, and other application data in
+this second directory. These mount targets follow OpenCode's default Linux
+locations; no path override is required.
 
 This means authentication, preferences, and other agent state survive disposable containers.
 
@@ -428,14 +463,19 @@ opencode
 
 All three tools still have access to their persistent state.
 
-These directories can contain sensitive authentication material and should not be committed.
+These directories can contain sensitive authentication material. Git tracks
+only their shared instruction files and ignores all other contents.
 
 The included `.gitignore` should contain:
 
 ```gitignore
-.codex/
-.claude/
-.opencode/
+.codex/*
+!.codex/AGENTS.md
+.claude/*
+!.claude/CLAUDE.md
+.config/opencode/*
+!.config/opencode/AGENTS.md
+.local/share/opencode/*
 ```
 
 ## Ports
@@ -832,8 +872,12 @@ Persistent agent state may contain sensitive tokens. Keep these directories priv
 ```text
 ~/.agent-container/.codex
 ~/.agent-container/.claude
-~/.agent-container/.opencode
+~/.agent-container/.config/opencode
+~/.agent-container/.local/share/opencode
 ```
+
+Only the shared instruction files in these directories are managed by Git; all
+other contents are ignored.
 
 ## License
 
