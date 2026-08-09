@@ -82,7 +82,8 @@ sqlite3
 Docker CLI
 ```
 
-Runtime versions are managed by `mise` and pinned in `versions.env`.
+Runtime versions are managed by `mise` and pinned by default in the
+`Dockerfile`. An optional `versions.env` file can override those defaults.
 
 ## Directory layout
 
@@ -91,7 +92,8 @@ The default installation location is:
 ```text
 ~/.agent-container/
 ├── Dockerfile
-├── versions.env
+├── versions.env_example
+├── versions.env (optional)
 ├── agent
 ├── agent-build
 ├── agent-entrypoint
@@ -162,27 +164,30 @@ AI_AGENT_IMAGE=my-agent:latest agent-build
 
 ## Version configuration
 
-Versions are defined in:
+Default versions are defined by `ARG` instructions in the `Dockerfile`, so no
+local version file is needed for a normal build.
+
+To override one or more defaults, create:
 
 ```text
 ~/.agent-container/versions.env
 ```
 
-Example:
+You can copy the tracked example and edit it:
+
+```bash
+cp ~/.agent-container/versions.env_example ~/.agent-container/versions.env
+```
+
+Each entry in `versions.env` is passed to Docker as a build argument. Entries
+may be omitted to retain the corresponding Dockerfile default. For example:
 
 ```dotenv
-DEBIAN_VERSION=bookworm-slim
-
-PYTHON_VERSION=3.14.6
-RUBY_VERSION=3.4.10
-NODE_VERSION=24.18.1
-
-BUNDLER_VERSION=4.0.17
-
-CLAUDE_CODE_VERSION=2.1.220
-CODEX_VERSION=0.146.0
-OPENCODE_VERSION=1.18.4
+CODEX_VERSION=0.147.0
 ```
+
+`versions.env` is intentionally ignored by Git. Delete it to return to all
+Dockerfile defaults.
 
 Rebuild the image after changing versions:
 
@@ -205,6 +210,17 @@ Then launch an agent.
 ```bash
 agent codex
 ```
+
+When Codex requires authentication, open another terminal and create an SSH
+tunnel for the authentication callback:
+
+```bash
+ssh -p 2222 -L 1455:localhost:1455 root@localhost
+```
+
+Keep the SSH session open while completing authentication. This command uses
+the default SSH port. If the launcher selected a different SSH port, or you
+supplied `--ssh-port`, replace `2222` with that port.
 
 ### Claude Code
 
@@ -333,7 +349,7 @@ Agent container is running:
   Name:     agent-f359abc71234
   Image:    agent-container:latest
   Status:   Up 12 minutes
-  Ports:    0.0.0.0:2222->22/tcp, 0.0.0.0:1455->1455/tcp
+  Ports:    127.0.0.1:2222->22/tcp, 127.0.0.1:1455->1455/tcp
 ```
 
 ## Stopping a container
@@ -453,15 +469,8 @@ container 1455
 
 Port `1455` is mapped to host port `1455` by default.
 
-SSH port selection is automatic.
-
-If host port `22` is free:
-
-```text
-host 22 -> container 22
-```
-
-If host port `22` is occupied, the launcher searches for a free port beginning at:
+SSH port selection is automatic. The launcher searches for a free port
+beginning at:
 
 ```text
 2222
@@ -475,6 +484,10 @@ host 1455 -> container 1455
 ```
 
 The launcher prints the selected mappings before starting the container.
+
+Both automatic mappings bind to `127.0.0.1` and are not exposed on other host
+network interfaces. Additional ports supplied with `-p` retain the bind address
+specified by the user.
 
 ## Custom SSH port
 
@@ -598,47 +611,26 @@ openssh-server
 
 The container entrypoint starts `sshd` automatically.
 
+Connect as `root` using the password `code`. For example, when the selected host
+port is `2222`:
+
+```bash
+ssh -p 2222 root@localhost
+```
+
+The automatic SSH mapping is bound to `127.0.0.1`. The password is intended for
+this local development environment and should be changed before exposing SSH
+through a custom Docker argument or another network path.
+
 SSH host keys are generated during the Docker image build so that newly created containers from the same image retain the same SSH server identity.
 
 Rebuilding the image from scratch generates new host keys.
 
-The container's inbound SSH configuration lives under:
+The SSH server configuration lives under:
 
 ```text
-/root/.ssh
+/etc/ssh/sshd_config
 ```
-
-Host SSH credentials are mounted separately at:
-
-```text
-/root/.ssh-host
-```
-
-This prevents outbound Git credentials from interfering with the container's inbound SSH configuration.
-
-## Host SSH credentials
-
-If:
-
-```text
-~/.ssh
-```
-
-exists on the host, it is mounted read-only at:
-
-```text
-/root/.ssh-host
-```
-
-The image can configure SSH to use identities such as:
-
-```text
-/root/.ssh-host/id_ed25519
-/root/.ssh-host/id_ecdsa
-/root/.ssh-host/id_rsa
-```
-
-For higher-security environments, SSH-agent forwarding is preferable to mounting private-key files directly.
 
 ## Docker access
 

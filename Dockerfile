@@ -88,7 +88,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     shellcheck \
     sqlite3 \
     rsync \
-    bubblewrap \
     docker.io \
     && rm -rf /var/lib/apt/lists/*
 
@@ -141,6 +140,11 @@ RUN mkdir -p /run/sshd \
     && ssh-keygen -A \
     && /usr/sbin/sshd -t
 
+RUN echo 'root:code' | chpasswd
+RUN echo 'PermitRootLogin yes' >> /etc/ssh/sshd_config
+RUN echo 'PasswordAuthentication yes' >> /etc/ssh/sshd_config
+RUN /usr/sbin/sshd -t
+
 EXPOSE 22 1455
 
 COPY agent-entrypoint /usr/local/bin/agent-entrypoint
@@ -164,7 +168,6 @@ RUN set -eux; \
     rg --version; \
     jq --version; \
     shellcheck --version; \
-    bwrap --version; \
     strace --version; \
     gdb --version; \
     ssh -V; \

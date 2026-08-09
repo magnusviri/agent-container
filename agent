@@ -15,7 +15,14 @@ WORKSPACE="$(pwd -P)"
 
 WORKSPACE_ID="$(
     printf '%s' "$WORKSPACE" \
-        | sha256sum \
+        | if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum
+          elif command -v shasum >/dev/null 2>&1; then
+            shasum -a 256
+          else
+            echo "Neither sha256sum nor shasum is available." >&2
+            exit 1
+          fi \
         | cut -c1-12
 )"
 
@@ -26,6 +33,11 @@ DOCKER_ARGS=()
 COMMAND=()
 PORT_ARGS=()
 RUN_ARGS=()
+IO_ARGS=(--interactive)
+
+if [[ -t 0 && -t 1 ]]; then
+    IO_ARGS+=(--tty)
+fi
 
 PUBLISH_SSH=0
 PUBLISH_CODEX=0
@@ -56,8 +68,7 @@ Behavior:
         container 22   -> an available host SSH port
         container 1455 -> host port 1455
 
-      If host port 22 is free, it is used for SSH. Otherwise the launcher finds
-      an available port starting at 2222.
+      The launcher finds an available SSH host port starting at 2222.
 
   agent claude
       Start Claude Code.
@@ -106,8 +117,8 @@ Options:
 
         agent codex
 
-      If omitted, the launcher chooses port 22 when available, otherwise the
-      first available port starting at 2222.
+      If omitted, the launcher chooses the first available port starting at
+      2222.
 
   --codex-port PORT
       Host port mapped to container port 1455.
@@ -215,27 +226,34 @@ port_is_available() {
 
     # macOS/Linux when lsof is available.
     if command -v lsof >/dev/null 2>&1; then
-        ! lsof -nP \
+        if lsof -nP \
             -iTCP:"$port" \
             -sTCP:LISTEN \
-            >/dev/null 2>&1
+            >/dev/null 2>&1; then
+            return 1
+        fi
 
-        return
+        return 0
     fi
 
     # Linux fallback.
     if command -v ss >/dev/null 2>&1; then
-        ! ss -ltn 2>/dev/null \
+        if ss -ltn 2>/dev/null \
             | awk '{print $4}' \
-            | grep -Eq "(^|:)$port$"
+            | grep -Eq "(^|:)$port$"; then
+            return 1
+        fi
 
-        return
+        return 0
     fi
 
     # Last-resort TCP connection test.
     if command -v nc >/dev/null 2>&1; then
-        ! nc -z 127.0.0.1 "$port" >/dev/null 2>&1
-        return
+        if nc -z 127.0.0.1 "$port" >/dev/null 2>&1; then
+            return 1
+        fi
+
+        return 0
     fi
 
     # If we cannot test it, assume unavailable rather than risk a collision.
@@ -378,16 +396,14 @@ if [[ ${#COMMAND[@]} -gt 0 ]]; then
 
             if [[ ${#COMMAND[@]} -eq 1 ]]; then
                 exec docker exec \
-                    --interactive \
-                    --tty \
+                    "${IO_ARGS[@]}" \
                     --workdir /workspace \
                     "$container" \
                     bash
             fi
 
             exec docker exec \
-                --interactive \
-                --tty \
+                "${IO_ARGS[@]}" \
                 --workdir /workspace \
                 "$container" \
                 "${COMMAND[@]:1}"
@@ -441,8 +457,7 @@ if [[ ${#COMMAND[@]} -eq 0 ]]; then
         echo "Attaching to agent container $RUNNING_CONTAINER"
 
         exec docker exec \
-            --interactive \
-            --tty \
+            "${IO_ARGS[@]}" \
             --workdir /workspace \
             "$RUNNING_CONTAINER" \
             bash
@@ -509,8 +524,7 @@ mkdir -p \
 
 RUN_ARGS=(
     --rm
-    --interactive
-    --tty
+    "${IO_ARGS[@]}"
     --init
 
     --name "$CONTAINER_NAME"
@@ -520,6 +534,7 @@ RUN_ARGS=(
     --label "agent-workspace-path=${WORKSPACE}"
 
     --hostname ai-agent
+    --add-host "host.docker.internal:host-gateway"
     --workdir /workspace
 
     --volume "$WORKSPACE:/workspace"
@@ -539,7 +554,7 @@ if [[ "$PUBLISH_SSH" == 1 ]]; then
     RESOLVED_SSH_HOST_PORT="$(find_available_ssh_port)"
 
     PORT_ARGS+=(
-        --publish "${RESOLVED_SSH_HOST_PORT}:22"
+        --publish "127.0.0.1:${RESOLVED_SSH_HOST_PORT}:22"
     )
 
     echo "SSH:   localhost:${RESOLVED_SSH_HOST_PORT} -> container:22"
@@ -547,7 +562,7 @@ fi
 
 if [[ "$PUBLISH_CODEX" == 1 ]]; then
     PORT_ARGS+=(
-        --publish "${CODEX_HOST_PORT}:1455"
+        --publish "127.0.0.1:${CODEX_HOST_PORT}:1455"
     )
 
     echo "Codex: localhost:${CODEX_HOST_PORT} -> container:1455"
