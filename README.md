@@ -713,7 +713,7 @@ When Codex first starts it displays this message.
 
 I don't have a Device Code or API key, but I can sign in with ChatGPT. If I choose "Sign
 in with ChatGPT", it displays a link to open in my web browser. After opening the page
-and singing in, it tries to open localhost:1455, which goes nowhere . To fix that, I
+and singing in, it tries to open localhost:1455, which goes nowhere. To fix that, I
 needed to use ssh tunneling. This is how it works.
 
 The container starts `sshd` when the container is launched with `agent codex` and
