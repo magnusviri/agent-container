@@ -713,13 +713,12 @@ When Codex first starts it displays this message.
 
 I don't have a Device Code or API key, but I can sign in with ChatGPT. If I choose "Sign
 in with ChatGPT", it displays a link to open in my web browser. After opening the page
-and singing in, it tries to open localhost:1455, which go nowhere because I'm not running
-Codex on the host, I'm running it in an isolated container. To fix that, I needed to use
-ssh tunneling. This is how it works.
+and singing in, it tries to open localhost:1455, which goes nowhere . To fix that, I
+needed to use ssh tunneling. This is how it works.
 
 The container starts `sshd` when the container is launched with `agent codex` and
 `~/.agent-container/.codex/auth.json` does not exist. Passing `--no-codex-auth`, prevents
-it from starting.
+`sshd` from starting.
 
 The password for the tunnel is random and printed when the container starts. You might
 have to scroll the Terminal window because codex clears the screen.
