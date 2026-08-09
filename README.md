@@ -175,32 +175,44 @@ AI_AGENT_IMAGE=my-agent:latest agent-build
 
 ## Version configuration
 
-Default versions are defined by `ARG` instructions in the `Dockerfile`, so no
-local version file is needed for a normal build.
+The versions of Debian, the language runtimes, and the coding agents are pinned
+in the `Dockerfile`. These pins make builds predictable and repeatable. You do
+not need a `versions.env` file unless you want to override one or more of those
+defaults.
 
-To override one or more defaults, create:
-
-```text
-~/.agent-container/versions.env
-```
-
-You can copy the tracked example and edit it:
+To create an override file, copy the provided example:
 
 ```bash
 cp ~/.agent-container/versions.env_example ~/.agent-container/versions.env
 ```
 
-Each entry in `versions.env` is passed to Docker as a build argument. Entries
-may be omitted to retain the corresponding Dockerfile default. For example:
+Then uncomment and change only the versions you want to override. Commented or
+omitted settings continue to use the versions pinned in the `Dockerfile`. For
+example:
 
 ```dotenv
 CODEX_VERSION=0.147.0
 ```
 
-`versions.env` is intentionally ignored by Git. Delete it to return to all
-Dockerfile defaults.
+Many of the tools also accept `latest` instead of a specific version:
 
-Rebuild the image after changing versions:
+```dotenv
+CODEX_VERSION=latest
+```
+
+Using `latest` makes builds less stable because the installed version can
+change whenever a new release is published. For that reason, the `Dockerfile`
+pins every version by default. If you choose `latest`, rebuild without the
+Docker cache to ensure the newest release is installed:
+
+```bash
+agent-build --no-cache
+```
+
+The `versions.env` file is intentionally ignored by Git. Delete it to return to
+all of the versions pinned in the `Dockerfile`.
+
+After changing an exact-version override, rebuild the image normally:
 
 ```bash
 agent-build

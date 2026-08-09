@@ -17,5 +17,6 @@ fi
 
 docker build \
   "${args[@]}" \
+  "$@" \
   --tag "$IMAGE" \
   "$AGENT_HOME"
