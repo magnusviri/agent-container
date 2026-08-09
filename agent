@@ -41,6 +41,7 @@ fi
 
 PUBLISH_SSH=0
 PUBLISH_CODEX=0
+CODEX_AUTH_ENABLED=1
 
 # -----------------------------------------------------------------------------
 # Help
@@ -67,9 +68,12 @@ Behavior:
       Codex defaults to --sandbox danger-full-access because the container
       provides the outer isolation boundary. Pass --sandbox or -s to override.
 
-      Codex mode automatically publishes:
+      When no persisted Codex login exists, Codex mode automatically publishes:
         container 22   -> an available host SSH port
         container 1455 -> host port 1455
+
+      If ~/.agent-container/.codex/auth.json exists, authentication support is
+      disabled automatically because Codex can use the persisted login.
 
       The launcher finds an available SSH host port starting at 2222.
 
@@ -133,11 +137,9 @@ Options:
 
         agent codex
 
-  --no-ssh-port
-      Disable automatic SSH port publishing in Codex mode.
-
-  --no-codex-port
-      Disable automatic port 1455 publishing in Codex mode.
+  --no-codex-auth
+      Disable Codex authentication support. Neither the SSH tunnel port nor
+      callback port 1455 is published, and sshd is not started.
 
   --docker-arg ARG
       Pass an additional argument directly to docker run.
@@ -350,13 +352,8 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
 
-        --no-ssh-port)
-            PUBLISH_SSH=-1
-            shift
-            ;;
-
-        --no-codex-port)
-            PUBLISH_CODEX=-1
+        --no-codex-auth)
+            CODEX_AUTH_ENABLED=0
             shift
             ;;
 
@@ -500,6 +497,10 @@ fi
 # -----------------------------------------------------------------------------
 
 if [[ ${#COMMAND[@]} -gt 0 && "${COMMAND[0]}" == "codex" ]]; then
+    if [[ -f "$AGENT_HOME/.codex/auth.json" ]]; then
+        CODEX_AUTH_ENABLED=0
+    fi
+
     CODEX_SANDBOX_CONFIGURED=0
 
     for arg in "${COMMAND[@]:1}"; do
@@ -519,11 +520,8 @@ if [[ ${#COMMAND[@]} -gt 0 && "${COMMAND[0]}" == "codex" ]]; then
         )
     fi
 
-    if [[ "$PUBLISH_SSH" != -1 ]]; then
+    if [[ "$CODEX_AUTH_ENABLED" == 1 ]]; then
         PUBLISH_SSH=1
-    fi
-
-    if [[ "$PUBLISH_CODEX" != -1 ]]; then
         PUBLISH_CODEX=1
     fi
 else
@@ -565,6 +563,10 @@ RUN_ARGS=(
     --volume "$AGENT_HOME/.claude:/root/.claude"
     --volume "$AGENT_HOME/.opencode:/root/.opencode"
 )
+
+if [[ "$CODEX_AUTH_ENABLED" == 0 ]]; then
+    RUN_ARGS+=(--env CODEX_AUTH_ENABLED=0)
+fi
 
 # -----------------------------------------------------------------------------
 # Ports

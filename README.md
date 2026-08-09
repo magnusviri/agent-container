@@ -23,9 +23,9 @@ It provides a consistent toolchain for:
 
 The container can be launched from **any project directory**. The current directory is mounted as `/workspace`, while AI-agent configuration and authentication state persist outside the disposable container.
 
-Wow, I started with a simple setup and in preparing this repo with ChatGPT it absolutely blew up in complexity. Here it is.
-
 The image is about 4.2 GB.
+
+__Note... I started with a simple setup then I used ChatGPT and it vastly improved it but then I pointed this very agent-container at it's own repo and now look at it. It absolutely blew up in complexity. That is what I call recursive improvement.__
 
 ## Features
 
@@ -384,6 +384,8 @@ is mounted at:
 /root/.codex
 ```
 
+Copy the contents of `add-to-dot-codex/` into `~/.agent-container/.codex`.
+
 ### Claude Code
 
 ```text
@@ -464,12 +466,18 @@ When running:
 agent codex
 ```
 
-the launcher automatically publishes:
+the launcher automatically publishes the authentication ports when
+`~/.agent-container/.codex/auth.json` does not exist:
 
 ```text
 container 22
 container 1455
 ```
+
+Pass `--no-codex-auth` to publish neither port and prevent `sshd` from starting.
+The launcher applies the same behavior automatically when
+`~/.agent-container/.codex/auth.json` exists, because Codex can use the
+persisted login without starting the authentication callback flow.
 
 Port `1455` is mapped to host port `1455` by default.
 
@@ -535,28 +543,16 @@ export AI_AGENT_CODEX_PORT=1456
 
 The container-side port remains `1455`.
 
-## Disable Codex automatic ports
+## Disable Codex authentication support
 
-Disable SSH publishing:
-
-```bash
-agent --no-ssh-port codex
-```
-
-Disable callback publishing:
+Disable the SSH tunnel, callback port, and `sshd` startup:
 
 ```bash
-agent --no-codex-port codex
+agent --no-codex-auth codex
 ```
 
-Disable both:
-
-```bash
-agent \
-    --no-ssh-port \
-    --no-codex-port \
-    codex
-```
+This is also the automatic behavior when
+`~/.agent-container/.codex/auth.json` exists.
 
 ## Additional ports
 
@@ -604,7 +600,7 @@ agent -p 127.0.0.1:3000:3000 claude
 
 Binding development ports to `127.0.0.1` is recommended when they do not need to be reachable from other machines.
 
-## SSH
+## SSH tunnel for Codex authentication
 
 The image contains both:
 
@@ -613,13 +609,20 @@ openssh-client
 openssh-server
 ```
 
-The container entrypoint starts `sshd` automatically.
+By default, the container entrypoint starts `sshd` only when the container is
+launched in Codex mode with `agent codex` and no persisted
+`~/.agent-container/.codex/auth.json` exists. Its one purpose is to let the user
+open an SSH tunnel for the Codex authentication callback. It does not start for
+the default shell, Claude Code, OpenCode, or other commands. Passing
+`--no-codex-auth`, or having a persisted Codex login, also prevents it from
+starting in Codex mode. It is not intended or needed for general remote shell
+access or any other workflow.
 
-Connect as `root`. The password is printed when the container starts. For example, when the selected host
-port is `2222`:
+The password for the tunnel is printed when the container starts. For example,
+when the selected host port is `2222`, open the tunnel as `root` with:
 
 ```bash
-ssh -p 2222 root@localhost
+ssh -p 2222 -L 1455:localhost:1455 root@localhost
 ```
 
 The automatic SSH mapping is bound to `127.0.0.1`. The password is intended for

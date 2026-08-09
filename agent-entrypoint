@@ -5,7 +5,7 @@ if [[ $# -eq 0 ]]; then
   exec bash
 fi
 
-if [[ "$1" == "codex" ]]; then
+if [[ "$1" == "codex" && "${CODEX_AUTH_ENABLED:-1}" == 1 ]]; then
   if [[ -z "${ROOT_PASSWORD:-}" ]]; then
     ROOT_PASSWORD="$(
       head -c 32 /dev/urandom \
