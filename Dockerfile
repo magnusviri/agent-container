@@ -88,6 +88,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     shellcheck \
     sqlite3 \
     rsync \
+    bubblewrap \
     docker.io \
     && rm -rf /var/lib/apt/lists/*
 
@@ -163,6 +164,7 @@ RUN set -eux; \
     rg --version; \
     jq --version; \
     shellcheck --version; \
+    bwrap --version; \
     strace --version; \
     gdb --version; \
     ssh -V; \
