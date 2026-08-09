@@ -35,6 +35,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 RUN apt-get update && apt-get install -y --no-install-recommends \
     bash \
     ca-certificates \
+    passwd \
     coreutils \
     findutils \
     diffutils \
@@ -117,6 +118,13 @@ RUN npm install --global \
       @openai/codex@${CODEX_VERSION} \
       opencode-ai@${OPENCODE_VERSION}
 
+WORKDIR /workspace
+
+RUN git config --system --add safe.directory '*' \
+    && git config --system init.defaultBranch main \
+    && git config --system core.autocrlf false \
+    && git config --system advice.detachedHead false
+
 RUN mkdir -p \
       /run/sshd \
       /root/.ssh \
@@ -127,23 +135,9 @@ RUN mkdir -p \
       /root/.config \
       /workspace \
     && chmod 700 /root/.ssh \
-    && ssh-keygen -A
-
-WORKDIR /workspace
-
-RUN git config --system --add safe.directory '*' \
-    && git config --system init.defaultBranch main \
-    && git config --system core.autocrlf false \
-    && git config --system advice.detachedHead false
-
-RUN mkdir -p /run/sshd \
     && ssh-keygen -A \
+    && printf '\nPermitRootLogin yes\nPasswordAuthentication yes\n' >> /etc/ssh/sshd_config \
     && /usr/sbin/sshd -t
-
-RUN echo 'root:code' | chpasswd
-RUN echo 'PermitRootLogin yes' >> /etc/ssh/sshd_config
-RUN echo 'PasswordAuthentication yes' >> /etc/ssh/sshd_config
-RUN /usr/sbin/sshd -t
 
 EXPOSE 22 1455
 
