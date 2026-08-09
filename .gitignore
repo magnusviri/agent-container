@@ -2,4 +2,4 @@
 .claude/
 .opencode/
 .DS_Store
-.versions.env
+versions.env

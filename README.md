@@ -109,7 +109,7 @@ The three hidden agent directories are created automatically and should not be c
 Clone the repository into:
 
 ```bash
-git clone <repository-url> ~/.agent-container
+git clone https://github.com/magnusviri/agent-container.git ~/.agent-container
 ```
 
 Make the scripts executable:
