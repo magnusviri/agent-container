@@ -34,6 +34,7 @@ COMMAND=()
 PORT_ARGS=()
 RUN_ARGS=()
 IO_ARGS=(--interactive)
+CREDENTIAL_MOUNT_ARGS=()
 
 if [[ -t 0 && -t 1 ]]; then
     IO_ARGS+=(--tty)
@@ -42,6 +43,9 @@ fi
 PUBLISH_SSH=0
 PUBLISH_CODEX=0
 CODEX_AUTH_ENABLED=1
+CREDENTIALS_DIR=""
+CREDENTIALS_READ_ONLY=0
+CREDENTIALS_REQUESTED=0
 
 # -----------------------------------------------------------------------------
 # Help
@@ -141,6 +145,19 @@ Options:
       Disable Codex authentication support. Neither the SSH tunnel port nor
       callback port 1455 is published, and sshd is not started.
 
+  --credentials DIR
+      Share credentials from a home-style profile directory, read-write.
+
+      Supported directories are mounted when present:
+        DIR/.ssh       -> /root/.ssh
+        DIR/.config/gh -> /root/.config/gh
+
+  --credentials-ro DIR
+      Share the same supported credential directories read-only.
+
+      Credential sharing only applies when creating a new container. It is
+      never enabled by default.
+
   --docker-arg ARG
       Pass an additional argument directly to docker run.
 
@@ -212,6 +229,10 @@ Examples:
   agent -p 3000 -p 5173 claude
 
   agent --ssh-port 2222 codex
+
+  agent --credentials "$HOME/.agent-credentials/work" codex
+
+  agent --credentials-ro "$HOME/.agent-credentials/personal" claude
 
   agent exec bash
 
@@ -319,6 +340,15 @@ require_running_container() {
     printf '%s\n' "$container"
 }
 
+credentials_require_new_container() {
+    echo "Credential mounts can only be configured when creating a container." >&2
+    echo "Stop the running workspace container, then relaunch with the credential option:" >&2
+    echo "  agent stop" >&2
+    echo "  agent --credentials DIR [command...]" >&2
+    echo "  agent --credentials-ro DIR [command...]" >&2
+    exit 1
+}
+
 # -----------------------------------------------------------------------------
 # Parse arguments
 # -----------------------------------------------------------------------------
@@ -360,6 +390,27 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
 
+        --credentials|--credentials-ro)
+            [[ $# -ge 2 ]] || {
+                echo "Missing value for $1" >&2
+                exit 1
+            }
+
+            if [[ "$CREDENTIALS_REQUESTED" == 1 ]]; then
+                echo "Specify only one of --credentials or --credentials-ro." >&2
+                exit 1
+            fi
+
+            CREDENTIALS_DIR="$2"
+            CREDENTIALS_REQUESTED=1
+
+            if [[ "$1" == "--credentials-ro" ]]; then
+                CREDENTIALS_READ_ONLY=1
+            fi
+
+            shift 2
+            ;;
+
         --docker-arg)
             [[ $# -ge 2 ]] || {
                 echo "Missing value for --docker-arg" >&2
@@ -393,6 +444,16 @@ done
 # -----------------------------------------------------------------------------
 
 if [[ ${#COMMAND[@]} -gt 0 ]]; then
+    case "${COMMAND[0]}" in
+        exec|stop|status)
+            if [[ "$CREDENTIALS_REQUESTED" == 1 ]]; then
+                echo "Credential options cannot be used with 'agent ${COMMAND[0]}'." >&2
+                echo "They only apply when creating a new container." >&2
+                exit 1
+            fi
+            ;;
+    esac
+
     case "${COMMAND[0]}" in
         exec)
             container="$(require_running_container)"
@@ -457,6 +518,10 @@ if [[ ${#COMMAND[@]} -eq 0 ]]; then
     RUNNING_CONTAINER="$(find_running_container)"
 
     if [[ -n "$RUNNING_CONTAINER" ]]; then
+        if [[ "$CREDENTIALS_REQUESTED" == 1 ]]; then
+            credentials_require_new_container
+        fi
+
         echo "Attaching to agent container $RUNNING_CONTAINER"
 
         exec docker exec \
@@ -474,6 +539,10 @@ fi
 RUNNING_CONTAINER="$(find_running_container)"
 
 if [[ -n "$RUNNING_CONTAINER" ]]; then
+    if [[ "$CREDENTIALS_REQUESTED" == 1 ]]; then
+        credentials_require_new_container
+    fi
+
     echo "An agent container is already running for this workspace:"
     echo "  $WORKSPACE"
     echo
@@ -485,6 +554,59 @@ if [[ -n "$RUNNING_CONTAINER" ]]; then
     echo "  agent exec <command>"
     echo "  agent stop"
     exit 1
+fi
+
+# -----------------------------------------------------------------------------
+# Optional credential profile
+# -----------------------------------------------------------------------------
+
+if [[ "$CREDENTIALS_REQUESTED" == 1 ]]; then
+    if [[ ! -d "$CREDENTIALS_DIR" ]]; then
+        echo "Credential profile is not a directory:" >&2
+        echo "  $CREDENTIALS_DIR" >&2
+        exit 1
+    fi
+
+    CREDENTIALS_DIR="$(cd "$CREDENTIALS_DIR" && pwd -P)"
+    SSH_CREDENTIALS_DIR="$CREDENTIALS_DIR/.ssh"
+    GITHUB_CREDENTIALS_DIR="$CREDENTIALS_DIR/.config/gh"
+
+    if [[ ( -e "$SSH_CREDENTIALS_DIR" || -L "$SSH_CREDENTIALS_DIR" ) && ! -d "$SSH_CREDENTIALS_DIR" ]]; then
+        echo "SSH credential path is not a directory:" >&2
+        echo "  $SSH_CREDENTIALS_DIR" >&2
+        exit 1
+    fi
+
+    if [[ ( -e "$GITHUB_CREDENTIALS_DIR" || -L "$GITHUB_CREDENTIALS_DIR" ) && ! -d "$GITHUB_CREDENTIALS_DIR" ]]; then
+        echo "GitHub credential path is not a directory:" >&2
+        echo "  $GITHUB_CREDENTIALS_DIR" >&2
+        exit 1
+    fi
+
+    CREDENTIAL_VOLUME_SUFFIX=""
+
+    if [[ "$CREDENTIALS_READ_ONLY" == 1 ]]; then
+        CREDENTIAL_VOLUME_SUFFIX=":ro"
+    fi
+
+    if [[ -d "$SSH_CREDENTIALS_DIR" ]]; then
+        CREDENTIAL_MOUNT_ARGS+=(
+            --volume "$SSH_CREDENTIALS_DIR:/root/.ssh${CREDENTIAL_VOLUME_SUFFIX}"
+        )
+    fi
+
+    if [[ -d "$GITHUB_CREDENTIALS_DIR" ]]; then
+        CREDENTIAL_MOUNT_ARGS+=(
+            --volume "$GITHUB_CREDENTIALS_DIR:/root/.config/gh${CREDENTIAL_VOLUME_SUFFIX}"
+        )
+    fi
+
+    if [[ ${#CREDENTIAL_MOUNT_ARGS[@]} -eq 0 ]]; then
+        echo "Credential profile contains no supported credential directories:" >&2
+        echo "  $CREDENTIALS_DIR" >&2
+        echo "Expected .ssh and/or .config/gh." >&2
+        exit 1
+    fi
 fi
 
 # A stopped container should normally not exist because we use --rm, but remove
@@ -568,6 +690,8 @@ RUN_ARGS=(
     --volume "$AGENT_HOME/.config/opencode:/root/.config/opencode"
     --volume "$AGENT_HOME/.local/share/opencode:/root/.local/share/opencode"
 )
+
+RUN_ARGS+=("${CREDENTIAL_MOUNT_ARGS[@]}")
 
 if [[ "$CODEX_AUTH_ENABLED" == 0 ]]; then
     RUN_ARGS+=(--env CODEX_AUTH_ENABLED=0)

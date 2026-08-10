@@ -513,6 +513,61 @@ Binding development ports to `127.0.0.1` is recommended when they do not need
 to be reachable from other machines. Without an explicit bind address, Docker
 publishes the port on all host interfaces by default.
 
+## Opt-in SSH and GitHub credentials
+
+Host SSH and GitHub credentials are not shared with agent containers by
+default. To share them with a newly created workspace container, point the
+launcher at a home-style credential profile:
+
+```bash
+agent --credentials "$HOME/.agent-credentials/work" codex
+```
+
+The launcher recognizes these directories within the selected profile:
+
+```text
+~/.agent-credentials/work/
+├── .ssh/       -> /root/.ssh
+└── .config/
+    └── gh/     -> /root/.config/gh
+```
+
+Either directory may be omitted, but the profile must contain at least one of
+them. Other files in the profile, including `.gitconfig` and
+`.git-credentials`, are not mounted. The launcher does not create missing
+credential directories.
+
+The `--credentials` mounts are read-write so SSH can update `known_hosts` and
+GitHub CLI can update its authentication state. Use read-only mounts when the
+container should not modify the selected profile:
+
+```bash
+agent --credentials-ro "$HOME/.agent-credentials/personal" claude
+```
+
+With read-only mounts, operations such as adding an SSH host key, running
+`gh auth login`, or refreshing stored authentication may fail. Existing SSH
+keys and GitHub CLI authentication remain usable when the tools do not need to
+write.
+
+Different containers can select different profiles:
+
+```bash
+cd ~/src/company-project
+agent --credentials "$HOME/.agent-credentials/work" codex
+
+cd ~/src/personal-project
+agent --credentials-ro "$HOME/.agent-credentials/personal" claude
+```
+
+Docker fixes bind mounts when a container is created. If a container is already
+running for the workspace, stop it before relaunching with a credential option.
+The `exec`, `status`, and `stop` commands do not accept credential options.
+
+Once a workspace container was explicitly created with a profile, later
+`agent` and `agent exec` sessions attached to that same container can access
+the mounted credentials until the container is stopped.
+
 ## Example workflow
 
 Build the environment:
@@ -676,6 +731,11 @@ production databases
 Kubernetes credentials
 host filesystem paths
 ```
+
+The `--credentials` and `--credentials-ro` options deliberately expose the
+selected SSH and GitHub CLI credentials to every process in that workspace
+container. Use a narrowly scoped profile for each agent or trust boundary, and
+stop the container when access is no longer needed.
 
 The default setup intentionally avoids mounting the Docker socket.
 
