@@ -89,6 +89,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     shellcheck \
     sqlite3 \
     rsync \
+    ansible \
     docker.io \
     && rm -rf /var/lib/apt/lists/*
 
@@ -162,6 +163,7 @@ RUN set -eux; \
     cmake --version; \
     rg --version; \
     jq --version; \
+    ansible --version; \
     shellcheck --version; \
     strace --version; \
     gdb --version; \

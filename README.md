@@ -13,6 +13,7 @@ It provides a consistent toolchain for:
 * Node.js / npm
 * Git
 * GitHub CLI
+* Ansible
 * Docker CLI
 * SSH client and server
 * native compilation
@@ -85,6 +86,7 @@ gzip
 xz
 rsync
 sqlite3
+ansible
 
 Docker CLI
 ```
