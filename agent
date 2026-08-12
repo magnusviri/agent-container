@@ -82,6 +82,12 @@ Behavior:
 
       The launcher finds an available SSH host port starting at 2222.
 
+  agent codex-ssh
+      Open an SSH tunnel to the agent container publishing host port 1455.
+
+      The SSH host port is discovered from that container's port mapping.
+      Exits with an error if no running agent container publishes port 1455.
+
   agent claude
       Start Claude Code.
 
@@ -460,6 +466,36 @@ if [[ ${#COMMAND[@]} -gt 0 ]]; then
     esac
 
     case "${COMMAND[0]}" in
+        codex-ssh)
+            CODEX_SSH_PORT=""
+
+            while read -r container; do
+                [[ -n "$container" ]] || continue
+
+                CODEX_SSH_PORT="$(docker inspect \
+                    --format '{{with index .NetworkSettings.Ports "22/tcp"}}{{(index . 0).HostPort}}{{end}}' \
+                    "$container")"
+
+                if [[ -n "$CODEX_SSH_PORT" ]]; then
+                    break
+                fi
+            done < <(docker ps \
+                --filter "label=agent-container=true" \
+                --filter "publish=1455" \
+                --format '{{.ID}}')
+
+            if [[ -z "$CODEX_SSH_PORT" ]]; then
+                echo "No running agent container publishes host port 1455." >&2
+                exit 1
+            fi
+
+            if [[ -f "${HOME}/.ssh/known_hosts" ]] && grep -Fq "[localhost]:${CODEX_SSH_PORT}" "${HOME}/.ssh/known_hosts"; then
+                ssh-keygen -R "[localhost]:${CODEX_SSH_PORT}"
+            fi
+
+            exec ssh -p "$CODEX_SSH_PORT" -L 1455:localhost:1455 root@localhost
+            ;;
+
         exec)
             container="$(require_running_container)"
 

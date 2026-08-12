@@ -837,14 +837,20 @@ Codex: localhost:1455 -> container:1455
   or connect an API key for usage-based billing
 ```
 
-Then, in another terminal, use the SSH port printed by the launcher (2222 in
-this example):
+Then, in another terminal, run:
 
 ```bash
-ssh -p 2222 -L 1455:localhost:1455 root@localhost
+agent codex-ssh
 ```
 
-If it says the key has changed:
+This finds the running agent container that publishes host port 1455, removes
+the saved host key for its mapped SSH port when needed, and opens the tunnel.
+It exits with an error if no such container is running.
+
+If the tunnel reports a changed host key, `agent codex-ssh` automatically
+removes the saved key for the discovered SSH port before connecting. If you
+need to reset it manually, use the SSH port mapped to container port 22 (for
+example, `2222`):
 
 ```
 @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
@@ -856,7 +862,7 @@ IT IS POSSIBLE THAT SOMEONE IS DOING SOMETHING NASTY!
 Then reset the saved key and try the tunnel again.
 
 ```bash
-ssh-keygen -R "[localhost]:2222"
+ssh-keygen -R "[localhost]:<ssh-port>"
 ```
 
 SSH host keys are generated during the image build, so containers created from
