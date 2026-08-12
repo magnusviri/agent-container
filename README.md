@@ -316,6 +316,22 @@ Agent container is running:
   Ports:    127.0.0.1:2222->22/tcp, 127.0.0.1:1455->1455/tcp
 ```
 
+## Listing containers
+
+List all running agent containers, including their IDs and host workspace
+directories:
+
+```bash
+agent list
+```
+
+Example output:
+
+```text
+ID: 9f4723ab921d	PWD: /home/me/project-a
+ID: 1a2b3c4d5e6f	PWD: /home/me/project-b
+```
+
 ## Stopping a container
 
 Stop the agent container associated with the current project:

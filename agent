@@ -58,6 +58,7 @@ Usage:
   agent exec [command...]
   agent stop
   agent status
+  agent list
 
 Behavior:
   agent
@@ -102,6 +103,9 @@ Behavior:
 
   agent status
       Show whether an agent container is running for the current workspace.
+
+  agent list
+      List running agent containers with their IDs and host workspace paths.
 
 Options:
   -p, --port PORT
@@ -445,7 +449,7 @@ done
 
 if [[ ${#COMMAND[@]} -gt 0 ]]; then
     case "${COMMAND[0]}" in
-        exec|stop|status)
+        exec|stop|status|list|ls)
             if [[ "$CREDENTIALS_REQUESTED" == 1 ]]; then
                 echo "Credential options cannot be used with 'agent ${COMMAND[0]}'." >&2
                 echo "They only apply when creating a new container." >&2
@@ -505,6 +509,13 @@ if [[ ${#COMMAND[@]} -gt 0 ]]; then
   Status:   {{.Status}}
   Ports:    {{.Ports}}'
 
+            exit 0
+            ;;
+
+        list|ls)
+            docker ps \
+                --filter "label=agent-container=true" \
+                --format 'ID: {{.ID}}	PWD: {{.Label "agent-workspace-path"}}'
             exit 0
             ;;
     esac
