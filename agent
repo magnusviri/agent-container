@@ -105,7 +105,8 @@ Behavior:
       Show whether an agent container is running for the current workspace.
 
   agent list
-      List running agent containers with their IDs and host workspace paths.
+      List running agent containers with their IDs, names, images, statuses,
+      ports, and host workspace paths.
 
 Options:
   -p, --port PORT
@@ -515,7 +516,7 @@ if [[ ${#COMMAND[@]} -gt 0 ]]; then
         list|ls)
             docker ps \
                 --filter "label=agent-container=true" \
-                --format 'ID: {{.ID}}	PWD: {{.Label "agent-workspace-path"}}'
+                --format 'ID: {{.ID}}	Name: {{.Names}}	Image: {{.Image}}	Status: {{.Status}}	Ports: {{.Ports}}	PWD: {{.Label "agent-workspace-path"}}'
             exit 0
             ;;
     esac

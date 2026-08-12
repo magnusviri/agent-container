@@ -318,8 +318,8 @@ Agent container is running:
 
 ## Listing containers
 
-List all running agent containers, including their IDs and host workspace
-directories:
+List all running agent containers, including their IDs, names, images, statuses,
+ports, and host workspace directories:
 
 ```bash
 agent list
@@ -328,8 +328,8 @@ agent list
 Example output:
 
 ```text
-ID: 9f4723ab921d	PWD: /home/me/project-a
-ID: 1a2b3c4d5e6f	PWD: /home/me/project-b
+ID: 9f4723ab921d	Name: agent-f359abc71234	Image: agent-container:latest	Status: Up 12 minutes	Ports: 127.0.0.1:2222->22/tcp	PWD: /home/me/project-a
+ID: 1a2b3c4d5e6f	Name: agent-7f8e9d012345	Image: agent-container:latest	Status: Up 3 minutes	Ports:	PWD: /home/me/project-b
 ```
 
 ## Stopping a container
