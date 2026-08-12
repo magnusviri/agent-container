@@ -140,8 +140,6 @@ RUN mkdir -p \
     && printf '\nPermitRootLogin yes\nPasswordAuthentication yes\n' >> /etc/ssh/sshd_config \
     && /usr/sbin/sshd -t
 
-EXPOSE 22 1455
-
 COPY agent-entrypoint /usr/local/bin/agent-entrypoint
 RUN chmod 0755 /usr/local/bin/agent-entrypoint
 
