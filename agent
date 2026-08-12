@@ -691,7 +691,6 @@ RUN_ARGS=(
     --label "agent-workspace=${WORKSPACE_ID}"
     --label "agent-workspace-path=${WORKSPACE}"
 
-    --hostname ai-agent
     --add-host "host.docker.internal:host-gateway"
     --workdir /workspace
 
