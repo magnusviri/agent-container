@@ -49,6 +49,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gh \
     ripgrep \
     jq \
+    minify \
     curl \
     wget \
     openssh-client \
@@ -161,6 +162,7 @@ RUN set -eux; \
     cmake --version; \
     rg --version; \
     jq --version; \
+    minify --version; \
     ansible --version; \
     shellcheck --version; \
     strace --version; \

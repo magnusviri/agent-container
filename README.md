@@ -14,6 +14,7 @@ It provides a consistent toolchain for:
 * Git
 * GitHub CLI
 * Ansible
+* Minify
 * Docker CLI
 * SSH client and server
 * native compilation
@@ -56,6 +57,7 @@ curl
 wget
 jq
 ripgrep
+minify
 find
 file
 tree
