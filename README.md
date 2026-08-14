@@ -111,6 +111,8 @@ Windows installations normally include it.
 
 ## Installation
 
+### macOS and Linux
+
 Clone the repository into:
 
 ```bash
@@ -120,23 +122,20 @@ git clone https://github.com/magnusviri/agent-container.git ~/.agent-container
 Note, installing it at ~/.agent-container makes it easier to to enable persistent auth
 files and other things. This can be configured with environment variables (see below).
 
-Make the scripts executable:
-
-```bash
-chmod +x \
-    ~/.agent-container/agent \
-    ~/.agent-container/agent-entrypoint
-```
-
 Optionally add convenience symlinks:
 
 ```bash
 mkdir -p ~/.local/bin
-
 ln -sf ~/.agent-container/agent ~/.local/bin/agent
 ```
 
 Ensure `~/.local/bin` is on your `PATH`.
+
+For zsh, add it to `~/.zshrc` automatically:
+
+```bash
+grep -qxF "export PATH=\"\$HOME/.local/bin:\$PATH\"" ~/.zshrc 2>/dev/null || echo "export PATH=\"\$HOME/.local/bin:\$PATH\"" >> ~/.zshrc
+```
 
 For Bash:
 
