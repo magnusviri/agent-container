@@ -98,6 +98,14 @@ Behavior:
   agent claude
       Start Claude Code.
 
+      Claude Code defaults to --dangerously-skip-permissions because the
+      container provides the outer isolation boundary. Pass --permission-mode,
+      --dangerously-skip-permissions, or --allow-dangerously-skip-permissions
+      after claude to override.
+
+      Every container sets IS_SANDBOX=1, which is what lets Claude Code accept
+      that flag while running as root.
+
   agent opencode
       Start OpenCode.
 
@@ -776,6 +784,31 @@ else
 fi
 
 # -----------------------------------------------------------------------------
+# Claude Code-specific defaults
+# -----------------------------------------------------------------------------
+
+if [[ ${#COMMAND[@]} -gt 0 && "${COMMAND[0]}" == "claude" ]]; then
+    CLAUDE_PERMISSIONS_CONFIGURED=0
+
+    for arg in "${COMMAND[@]:1}"; do
+        case "$arg" in
+            --permission-mode|--permission-mode=*|--dangerously-skip-permissions|--allow-dangerously-skip-permissions)
+                CLAUDE_PERMISSIONS_CONFIGURED=1
+                break
+                ;;
+        esac
+    done
+
+    if [[ "$CLAUDE_PERMISSIONS_CONFIGURED" == 0 ]]; then
+        COMMAND=(
+            claude
+            --dangerously-skip-permissions
+            "${COMMAND[@]:1}"
+        )
+    fi
+fi
+
+# -----------------------------------------------------------------------------
 # Persistent state
 # -----------------------------------------------------------------------------
 
@@ -802,6 +835,10 @@ RUN_ARGS=(
 
     --add-host "host.docker.internal:host-gateway"
     --workdir /workspace
+
+    # Claude Code refuses --dangerously-skip-permissions as root unless it is
+    # told the surrounding environment is already a sandbox.
+    --env IS_SANDBOX=1
 
     --volume "$WORKSPACE:/workspace"
 

@@ -28,6 +28,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     NPM_CONFIG_FUND=false \
     NPM_CONFIG_AUDIT=false \
     DISABLE_AUTOUPDATER=1 \
+    CLAUDE_CONFIG_DIR=/root/.claude \
     MISE_DATA_DIR=/usr/local/share/mise \
     MISE_CONFIG_DIR=/etc/mise \
     PATH=/usr/local/share/mise/shims:/usr/local/bin:/usr/bin:/bin

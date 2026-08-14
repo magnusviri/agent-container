@@ -255,6 +255,14 @@ details.
 agent claude
 ```
 
+The launcher runs Claude Code with `--dangerously-skip-permissions` by default
+because the container provides the outer isolation boundary. Pass an explicit
+`--permission-mode` option after `claude` to override this default.
+
+Claude Code refuses that flag while running as root, so every container is
+started with `IS_SANDBOX=1`, the environment variable that tells Claude Code
+its surroundings are already sandboxed.
+
 ### OpenCode
 
 ```bash
@@ -440,6 +448,25 @@ is mounted at:
 ```
 
 Its `CLAUDE.md` is a symbolic link to `.codex/AGENTS.md`.
+
+By default Claude Code splits its state between `~/.claude` and a separate
+`~/.claude.json` file in the home directory. That file holds the signed-in
+account, the selected authentication method, and the completed-onboarding flag,
+so leaving it outside the mount made Claude Code ask to authenticate again in
+every new container.
+
+The image therefore sets:
+
+```dockerfile
+ENV CLAUDE_CONFIG_DIR=/root/.claude
+```
+
+which keeps `.claude.json` and `.credentials.json` together inside the mounted
+directory, where both persist.
+
+`~/.claude.json` is not mounted as a single file on purpose. Claude Code
+rewrites it by writing a temporary file and renaming it over the original, and
+that rename does not reach the host through a file bind mount.
 
 ### OpenCode
 

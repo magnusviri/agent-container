@@ -15,6 +15,9 @@ Usage:
 
 Commands:
   codex, claude, opencode  Start a coding agent in the workspace container.
+                           Codex defaults to --sandbox danger-full-access and
+                           Claude Code to --dangerously-skip-permissions,
+                           because the container is the isolation boundary.
   build [OPTIONS...]       Build the image; pass options to docker build.
   codex-ssh                Open the Codex authentication SSH tunnel.
   exec [COMMAND...]        Run a command in the current workspace container.
@@ -348,6 +351,21 @@ try {
         if ($CodexAuthEnabled) { $PublishSsh = $true; $PublishCodex = $true }
     }
 
+    if ($Command.Count -and $Command[0] -eq 'claude') {
+        $permissionsConfigured = $false
+        foreach ($argument in @($Command | Select-Object -Skip 1)) {
+            if ($argument -eq '--permission-mode' -or $argument -like '--permission-mode=*' -or
+                $argument -in @('--dangerously-skip-permissions', '--allow-dangerously-skip-permissions')) {
+                $permissionsConfigured = $true; break
+            }
+        }
+        if (-not $permissionsConfigured) {
+            $remainingCommand = @($Command | Select-Object -Skip 1)
+            $Command = [System.Collections.Generic.List[string]]::new()
+            @('claude', '--dangerously-skip-permissions') + $remainingCommand | ForEach-Object { $Command.Add($_) }
+        }
+    }
+
     $stateDirectories = @('.codex', '.claude', '.config/opencode', '.local/share/opencode')
     foreach ($relativePath in $stateDirectories) {
         New-Item -ItemType Directory -Force -Path (Join-Path $script:AgentHome $relativePath) | Out-Null
@@ -363,6 +381,9 @@ try {
         '--label', "agent-workspace-path=$($script:Workspace)",
         '--add-host', 'host.docker.internal:host-gateway',
         '--workdir', '/workspace',
+        # Claude Code refuses --dangerously-skip-permissions as root unless it
+        # is told the surrounding environment is already a sandbox.
+        '--env', 'IS_SANDBOX=1',
         '--volume', "$($script:Workspace):/workspace",
         '--volume', "$(Join-Path $script:AgentHome '.codex'):/root/.codex",
         '--volume', "$(Join-Path $script:AgentHome '.claude'):/root/.claude",
