@@ -2,14 +2,14 @@
 
 ## Project Structure & Module Organization
 
-This repository builds and launches a reusable Docker environment for coding agents. The root-level `Dockerfile` defines the toolchain. `agent` is the main host-side launcher; `agent-build` converts `versions.env` entries into Docker build arguments; and `agent-entrypoint` starts SSH before executing the requested command. `versions.env_example` documents supported version pins, while `versions.env` supplies the local build values. Keep user-facing behavior and setup instructions synchronized with `README.md`. Runtime state under `.codex/`, `.claude/`, `.config/opencode/`, and `.local/share/opencode/` is local and must remain untracked except for the shared instruction files explicitly allowed by `.gitignore`.
+This repository builds and launches a reusable Docker environment for coding agents. The root-level `Dockerfile` defines the toolchain. `agent` is the main host-side launcher and its `build` command converts `versions.env` entries into Docker build arguments; `agent-entrypoint` starts SSH before executing the requested command. `versions.env_example` documents supported version pins, while `versions.env` supplies the local build values. Keep user-facing behavior and setup instructions synchronized with `README.md`. Runtime state under `.codex/`, `.claude/`, `.config/opencode/`, and `.local/share/opencode/` is local and must remain untracked except for the shared instruction files explicitly allowed by `.gitignore`.
 
 ## Build, Test, and Development Commands
 
-- `AI_AGENT_HOME="$PWD" ./agent-build` builds `agent-container:latest` from this checkout. Docker must be running.
+- `AI_AGENT_HOME="$PWD" ./agent build` builds `agent-container:latest` from this checkout. Docker must be running.
 - `AI_AGENT_HOME="$PWD" ./agent --help` checks launcher help and option documentation.
-- `bash -n agent agent-build agent-entrypoint` performs fast syntax validation.
-- `shellcheck agent agent-build agent-entrypoint` reports common shell errors.
+- `bash -n agent agent-entrypoint` performs fast syntax validation.
+- `shellcheck agent agent-entrypoint` reports common shell errors.
 - `AI_AGENT_HOME="$PWD" ./agent status` exercises workspace/container discovery after a build.
 
 Override the image during experiments with `AI_AGENT_IMAGE=agent-container:dev` so the normal `latest` image is unaffected.

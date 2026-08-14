@@ -99,9 +99,15 @@ Runtime versions are managed by `mise` and pinned by default in the
 ## Requirements
 
 Install Docker Engine or Docker Desktop and make sure its daemon is running.
-The host also needs Bash, Git, and either `sha256sum` (common on Linux) or
-`shasum` (included with macOS). Automatic SSH-port selection also requires one
-of `lsof`, `ss`, or `nc` on the host.
+On Windows, Docker Desktop must be using Linux containers.
+
+Linux and macOS hosts also need Bash, Git, and either `sha256sum` (common on
+Linux) or `shasum` (included with macOS). Automatic SSH-port selection requires
+one of `lsof`, `ss`, or `nc` on those hosts.
+
+Windows hosts need Windows PowerShell 5.1 or PowerShell 7 and Git. The optional
+`agent codex-ssh` command also needs the Windows OpenSSH Client feature; current
+Windows installations normally include it.
 
 ## Installation
 
@@ -119,7 +125,6 @@ Make the scripts executable:
 ```bash
 chmod +x \
     ~/.agent-container/agent \
-    ~/.agent-container/agent-build \
     ~/.agent-container/agent-entrypoint
 ```
 
@@ -129,7 +134,6 @@ Optionally add convenience symlinks:
 mkdir -p ~/.local/bin
 
 ln -sf ~/.agent-container/agent ~/.local/bin/agent
-ln -sf ~/.agent-container/agent-build ~/.local/bin/agent-build
 ```
 
 Ensure `~/.local/bin` is on your `PATH`.
@@ -142,13 +146,57 @@ export PATH="$HOME/.local/bin:$PATH"
 
 You may want to place that in `~/.bashrc`.
 
+### Windows installation
+
+From PowerShell, clone the repository to the default state directory:
+
+```powershell
+git clone https://github.com/magnusviri/agent-container.git "$HOME\.agent-container"
+```
+
+The repository includes native PowerShell launchers and `.cmd` wrappers, so
+Bash, WSL, and executable-bit changes are not required. Run them directly:
+
+```powershell
+& "$HOME\.agent-container\agent.cmd" build
+& "$HOME\.agent-container\agent.cmd" --help
+```
+
+To use `agent` from any new PowerShell or Command Prompt window, add the
+installation directory to your user `PATH` once:
+
+```powershell
+$agentHome = "$HOME\.agent-container"
+$userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+if (($userPath -split ';') -notcontains $agentHome) {
+    [Environment]::SetEnvironmentVariable('Path', "$userPath;$agentHome", 'User')
+}
+```
+
+Then open a new terminal. Windows resolves `agent` to `agent.cmd`; its options
+and commands match the Bash launcher. If Docker Desktop prompts to share the
+drive or directory containing a workspace, approve that mount before launching
+the container. The Windows launcher also compensates when Git checks the shared
+instruction symlinks out as plain placeholder files, without modifying the
+checkout.
+
 ## Building the image
 
 Build the agent image with:
 
 ```bash
-agent-build
+agent build
 ```
+
+The same command works in PowerShell after the Windows installation above:
+
+```powershell
+agent build
+```
+
+Building first is optional. When a launch needs an image that does not exist,
+`agent` offers to build it automatically. In a non-interactive session, run
+`agent build` explicitly before launching.
 
 The default image name is:
 
@@ -159,7 +207,14 @@ agent-container:latest
 Override it with:
 
 ```bash
-AI_AGENT_IMAGE=my-agent:latest agent-build
+AI_AGENT_IMAGE=my-agent:latest agent build
+```
+
+In PowerShell, environment-variable overrides use this syntax:
+
+```powershell
+$env:AI_AGENT_IMAGE = 'my-agent:latest'
+agent build
 ```
 
 ## Basic usage
@@ -168,6 +223,13 @@ Move into any project:
 
 ```bash
 cd ~/src/my-project
+```
+
+On Windows, use the same `agent` commands from PowerShell after changing to a
+Windows project directory:
+
+```powershell
+Set-Location "$HOME\src\my-project"
 ```
 
 Then launch an agent.
@@ -593,7 +655,7 @@ the mounted credentials until the container is stopped.
 Build the environment:
 
 ```bash
-agent-build
+agent build
 ```
 
 Open a project:
@@ -652,7 +714,8 @@ The default installation location is:
 ├── versions.env_example
 ├── versions.env (optional)
 ├── agent
-├── agent-build
+├── agent.cmd
+├── agent.ps1
 ├── agent-entrypoint
 ├── README.md
 ├── LICENSE
@@ -710,7 +773,7 @@ pins every version by default. If you choose `latest`, rebuild without the
 Docker cache to ensure the newest release is installed:
 
 ```bash
-agent-build --no-cache
+agent build --no-cache
 ```
 
 The `versions.env` file is intentionally ignored by Git. Delete it to return to
@@ -719,7 +782,7 @@ all of the versions pinned in the `Dockerfile`.
 After changing an exact-version override, rebuild the image normally:
 
 ```bash
-agent-build
+agent build
 ```
 
 ## Repository safety

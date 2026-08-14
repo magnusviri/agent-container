@@ -55,6 +55,7 @@ usage() {
     cat <<'EOF'
 Usage:
   agent [options] [--] [command...]
+  agent build [docker-build-options...]
   agent exec [command...]
   agent stop
   agent status
@@ -66,6 +67,12 @@ Behavior:
       with an interactive Bash shell.
 
       If no container is running, start a new container with Bash.
+
+      If the configured image does not exist, offer to build it before starting
+      the container.
+
+  agent build [OPTIONS...]
+      Build the configured agent image. Options are passed to docker build.
 
   agent codex
       Start Codex in a new agent container.
@@ -338,6 +345,65 @@ find_existing_container() {
         | head -n 1
 }
 
+build_image() {
+    local env_file="$AGENT_HOME/versions.env"
+    local line key value
+    local -a build_args=()
+    local -a docker_build_args=("$@")
+
+    if [[ -f "$env_file" ]]; then
+        while IFS= read -r line || [[ -n "$line" ]]; do
+            line="${line%$'\r'}"
+            [[ -n "$line" && "$line" != \#* ]] || continue
+
+            if [[ "$line" != *=* ]]; then
+                echo "Invalid entry in $env_file: $line" >&2
+                return 1
+            fi
+
+            key="${line%%=*}"
+            value="${line#*=}"
+            build_args+=(--build-arg "$key=$value")
+        done < "$env_file"
+    fi
+
+    docker build \
+        "${build_args[@]}" \
+        "${docker_build_args[@]}" \
+        --tag "$IMAGE" \
+        "$AGENT_HOME"
+}
+
+ensure_image_exists() {
+    local response
+
+    if docker image inspect "$IMAGE" >/dev/null 2>&1; then
+        return
+    fi
+
+    echo "Docker image '$IMAGE' is not built." >&2
+
+    if [[ ! -t 0 ]]; then
+        echo "Run 'agent build' to build it, then try again." >&2
+        exit 1
+    fi
+
+    if ! read -r -p "Build it now? [Y/n] " response; then
+        echo >&2
+        echo "Build cancelled. Run 'agent build' when you are ready." >&2
+        exit 1
+    fi
+    case "$response" in
+        ""|y|Y|yes|YES|Yes)
+            build_image
+            ;;
+        *)
+            echo "Build cancelled. Run 'agent build' when you are ready."
+            exit 1
+            ;;
+    esac
+}
+
 require_running_container() {
     local container
     container="$(find_running_container)"
@@ -456,7 +522,7 @@ done
 
 if [[ ${#COMMAND[@]} -gt 0 ]]; then
     case "${COMMAND[0]}" in
-        exec|stop|status|list|ls)
+        build|exec|stop|status|list|ls)
             if [[ "$CREDENTIALS_REQUESTED" == 1 ]]; then
                 echo "Credential options cannot be used with 'agent ${COMMAND[0]}'." >&2
                 echo "They only apply when creating a new container." >&2
@@ -466,6 +532,11 @@ if [[ ${#COMMAND[@]} -gt 0 ]]; then
     esac
 
     case "${COMMAND[0]}" in
+        build)
+            build_image "${COMMAND[@]:1}"
+            exit $?
+            ;;
+
         codex-ssh)
             CODEX_SSH_PORT=""
 
@@ -603,6 +674,8 @@ if [[ -n "$RUNNING_CONTAINER" ]]; then
     echo "  agent stop"
     exit 1
 fi
+
+ensure_image_exists
 
 # -----------------------------------------------------------------------------
 # Optional credential profile
