@@ -109,6 +109,10 @@ Behavior:
   agent opencode
       Start OpenCode.
 
+      OpenCode defaults to --dangerously-skip-permissions because the
+      container provides the outer isolation boundary. Pass --auto, --yolo,
+      or --dangerously-skip-permissions after opencode to override.
+
   agent exec COMMAND...
       Execute COMMAND inside the running agent container for the current
       workspace.
@@ -802,6 +806,31 @@ if [[ ${#COMMAND[@]} -gt 0 && "${COMMAND[0]}" == "claude" ]]; then
     if [[ "$CLAUDE_PERMISSIONS_CONFIGURED" == 0 ]]; then
         COMMAND=(
             claude
+            --dangerously-skip-permissions
+            "${COMMAND[@]:1}"
+        )
+    fi
+fi
+
+# -----------------------------------------------------------------------------
+# OpenCode-specific defaults
+# -----------------------------------------------------------------------------
+
+if [[ ${#COMMAND[@]} -gt 0 && "${COMMAND[0]}" == "opencode" ]]; then
+    OPENCODE_PERMISSIONS_CONFIGURED=0
+
+    for arg in "${COMMAND[@]:1}"; do
+        case "$arg" in
+            --auto|--yolo|--dangerously-skip-permissions)
+                OPENCODE_PERMISSIONS_CONFIGURED=1
+                break
+                ;;
+        esac
+    done
+
+    if [[ "$OPENCODE_PERMISSIONS_CONFIGURED" == 0 ]]; then
+        COMMAND=(
+            opencode
             --dangerously-skip-permissions
             "${COMMAND[@]:1}"
         )

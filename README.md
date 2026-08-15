@@ -269,6 +269,11 @@ its surroundings are already sandboxed.
 agent opencode
 ```
 
+The launcher runs OpenCode with `--dangerously-skip-permissions` by default
+because the container provides the outer isolation boundary. Pass an explicit
+`--auto`, `--yolo`, or `--dangerously-skip-permissions` option after `opencode`
+to override this default.
+
 ### Generic shell
 
 ```bash

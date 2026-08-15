@@ -16,8 +16,9 @@ Usage:
 Commands:
   codex, claude, opencode  Start a coding agent in the workspace container.
                            Codex defaults to --sandbox danger-full-access and
-                           Claude Code to --dangerously-skip-permissions,
-                           because the container is the isolation boundary.
+                           Claude Code and OpenCode to
+                           --dangerously-skip-permissions, because the
+                           container is the isolation boundary.
   build [OPTIONS...]       Build the image; pass options to docker build.
   codex-ssh                Open the Codex authentication SSH tunnel.
   exec [COMMAND...]        Run a command in the current workspace container.
@@ -363,6 +364,20 @@ try {
             $remainingCommand = @($Command | Select-Object -Skip 1)
             $Command = [System.Collections.Generic.List[string]]::new()
             @('claude', '--dangerously-skip-permissions') + $remainingCommand | ForEach-Object { $Command.Add($_) }
+        }
+    }
+
+    if ($Command.Count -and $Command[0] -eq 'opencode') {
+        $permissionsConfigured = $false
+        foreach ($argument in @($Command | Select-Object -Skip 1)) {
+            if ($argument -in @('--auto', '--yolo', '--dangerously-skip-permissions')) {
+                $permissionsConfigured = $true; break
+            }
+        }
+        if (-not $permissionsConfigured) {
+            $remainingCommand = @($Command | Select-Object -Skip 1)
+            $Command = [System.Collections.Generic.List[string]]::new()
+            @('opencode', '--dangerously-skip-permissions') + $remainingCommand | ForEach-Object { $Command.Add($_) }
         }
     }
 
