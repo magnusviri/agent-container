@@ -122,7 +122,18 @@ git clone https://github.com/magnusviri/agent-container.git ~/.agent-container
 Note, installing it at ~/.agent-container makes it easier to to enable persistent auth
 files and other things. This can be configured with environment variables (see below).
 
-Optionally add convenience symlinks:
+Make `agent` available from any directory with:
+
+```bash
+./agent init
+```
+
+This creates `agent` and `agent-container` symlinks in `~/.agent-container/bin`
+and appends that directory to `PATH` in `~/.zshrc` when it is not already
+present. Restart your shell or run `source ~/.zshrc`, then use `agent` anywhere.
+Run `./agent init` again to refresh the shortcuts.
+
+Alternatively, add convenience symlinks manually:
 
 ```bash
 mkdir -p ~/.local/bin
@@ -163,6 +174,15 @@ Bash, WSL, and executable-bit changes are not required. Run them directly:
 
 To use `agent` from any new PowerShell or Command Prompt window, add the
 installation directory to your user `PATH` once:
+
+```powershell
+& "$HOME\.agent-container\agent.cmd" init
+```
+
+This adds the install directory to the user `PATH` (like the manual snippet
+below) and prints confirmation. Open a new terminal afterward.
+
+Or add it manually:
 
 ```powershell
 $agentHome = "$HOME\.agent-container"

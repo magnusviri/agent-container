@@ -55,6 +55,7 @@ usage() {
     cat <<'EOF'
 Usage:
   agent [options] [--] [command...]
+  agent init
   agent build [docker-build-options...]
   agent exec [command...]
   agent stop
@@ -73,6 +74,16 @@ Behavior:
 
   agent build [OPTIONS...]
       Build the configured agent image. Options are passed to docker build.
+
+  agent init
+      Install shortcuts for the launcher itself.
+
+      Creates 'agent' and 'agent-container' symlinks to this script in:
+
+        ~/.agent-container/bin
+
+      and appends that directory to PATH in ~/.zshrc when it is not already
+      present. Run it again to refresh the shortcuts and PATH entry.
 
   agent codex
       Start Codex in a new agent container.
@@ -246,6 +257,8 @@ Workspace:
     /workspace
 
 Examples:
+  agent init
+
   agent
 
   agent codex
@@ -317,6 +330,32 @@ port_is_available() {
 
     # If we cannot test it, assume unavailable rather than risk a collision.
     return 1
+}
+
+resolve_realpath() {
+    local path="$1"
+    local directory file target
+
+    # Linux/coreutils readlink; falls back to manual symlink resolution below.
+    if command -v readlink >/dev/null 2>&1 && readlink -f "$path" >/dev/null 2>&1; then
+        printf '%s\n' "$(readlink -f "$path")"
+        return
+    fi
+
+    directory="$(cd "$(dirname "$path")" && pwd -P)"
+    file="$(basename "$path")"
+
+    while [[ -L "$directory/$file" ]]; do
+        target="$(readlink "$directory/$file")"
+        if [[ "$target" == /* ]]; then
+            directory="$(cd "$(dirname "$target")" && pwd -P)"
+        else
+            directory="$(cd "$directory/$(dirname "$target")" && pwd -P)"
+        fi
+        file="$(basename "$target")"
+    done
+
+    printf '%s\n' "$directory/$file"
 }
 
 find_available_ssh_port() {
@@ -534,7 +573,7 @@ done
 
 if [[ ${#COMMAND[@]} -gt 0 ]]; then
     case "${COMMAND[0]}" in
-        build|exec|stop|status|list|ls)
+        build|exec|stop|status|list|ls|init)
             if [[ "$CREDENTIALS_REQUESTED" == 1 ]]; then
                 echo "Credential options cannot be used with 'agent ${COMMAND[0]}'." >&2
                 echo "They only apply when creating a new container." >&2
@@ -544,6 +583,34 @@ if [[ ${#COMMAND[@]} -gt 0 ]]; then
     esac
 
     case "${COMMAND[0]}" in
+        init)
+            SCRIPT_PATH="$(resolve_realpath "$0")"
+            BIN_DIR="$AGENT_HOME/bin"
+            ZSHRC="${ZDOTDIR:-$HOME}/.zshrc"
+            PATH_EXPORT="export PATH=\"${BIN_DIR}:\$PATH\""
+
+            mkdir -p "$BIN_DIR"
+
+            ln -sf "$SCRIPT_PATH" "$BIN_DIR/agent"
+            ln -sf "$SCRIPT_PATH" "$BIN_DIR/agent-container"
+
+            if [[ -f "$ZSHRC" ]] && grep -Fq "$PATH_EXPORT" "$ZSHRC"; then
+                echo "PATH entry already present in $ZSHRC."
+            else
+                printf '\n# agent-container launcher\n%s\n' "$PATH_EXPORT" >> "$ZSHRC"
+                echo "Added PATH entry to $ZSHRC."
+            fi
+
+            echo
+            echo "Installed shortcuts:"
+            echo "  $BIN_DIR/agent"
+            echo "  $BIN_DIR/agent-container"
+            echo
+            echo "Restart your shell or run: source $ZSHRC"
+            echo "Then use 'agent' from anywhere."
+            exit 0
+            ;;
+
         build)
             build_image "${COMMAND[@]:1}"
             exit $?

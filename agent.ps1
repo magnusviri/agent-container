@@ -7,6 +7,7 @@ function Show-Usage {
     @'
 Usage:
   agent [options] [--] [command...]
+  agent init
   agent build [docker-build-options...]
   agent exec [command...]
   agent stop
@@ -22,6 +23,8 @@ Commands:
   build [OPTIONS...]       Build the image; pass options to docker build.
   codex-ssh                Open the Codex authentication SSH tunnel.
   exec [COMMAND...]        Run a command in the current workspace container.
+  init                     Add the install directory to the user PATH so
+                           'agent' runs from any new terminal window.
   stop                     Stop the current workspace container.
   status                   Show the current workspace container.
   list, ls                 List all running agent containers.
@@ -225,9 +228,35 @@ try {
         if ($Command.Count -gt 0 -or $argument -eq '--') { break }
     }
 
+    $builtIn = if ($Command.Count) { $Command[0] } else { '' }
+
+    if ($builtIn -eq 'init') {
+        if ($CredentialsRequested) {
+            throw "Credential options cannot be used with 'agent init'; they only apply when creating a container."
+        }
+
+        $installDirectory = $PSScriptRoot.TrimEnd('\')
+        $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+        $pathEntries = @($userPath -split ';' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+        $alreadyPresent = $pathEntries | Where-Object { $_.TrimEnd('\') -ieq $installDirectory }
+
+        if ($alreadyPresent) {
+            Write-Output "PATH already contains $installDirectory."
+        } else {
+            $newPath = if ($userPath) { "$userPath;$installDirectory" } else { $installDirectory }
+            [Environment]::SetEnvironmentVariable('Path', $newPath, 'User')
+            Write-Output "Added $installDirectory to the user PATH."
+        }
+
+        Write-Output ''
+        Write-Output 'Shortcuts are installed. Open a new terminal window so the'
+        Write-Output 'PATH change takes effect, then run:'
+        Write-Output '  agent'
+        exit 0
+    }
+
     Assert-DockerAvailable
 
-    $builtIn = if ($Command.Count) { $Command[0] } else { '' }
     if ($CredentialsRequested -and $builtIn -in @('build', 'exec', 'stop', 'status', 'list', 'ls')) {
         throw "Credential options cannot be used with 'agent $builtIn'; they only apply when creating a container."
     }
