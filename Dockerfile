@@ -31,7 +31,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     CLAUDE_CONFIG_DIR=/home/agent/.claude \
     MISE_DATA_DIR=/usr/local/share/mise \
     MISE_CONFIG_DIR=/etc/mise \
-    PATH=/usr/local/share/mise/shims:/usr/local/bin:/usr/bin:/bin
+    PATH=/usr/local/share/mise/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     bash \
