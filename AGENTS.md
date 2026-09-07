@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-This repository builds and launches a reusable Docker environment for coding agents. The root-level `Dockerfile` defines the toolchain. `agent` is the main host-side launcher and its `build` command converts `versions.env` entries into Docker build arguments; `agent-entrypoint` starts SSH before executing the requested command. `versions.env_example` documents supported version pins, while `versions.env` supplies the local build values. Keep user-facing behavior and setup instructions synchronized with `README.md`. Runtime state under `.codex/`, `.claude/`, `.config/opencode/`, and `.local/share/opencode/` is local and must remain untracked except for the shared instruction files explicitly allowed by `.gitignore`.
+This repository builds and launches a reusable Docker environment for coding agents. The root-level `Dockerfile` defines the toolchain. `agent` is the main host-side Bash launcher; `agent.cmd` and `agent.ps1` provide the equivalent Windows launchers. The `build` command converts `versions.env` entries into Docker build arguments. `agent-entrypoint` starts SSH before executing the requested command. `versions.env_example` documents supported version pins, while `versions.env` supplies the local build values. `models.py` is a helper that fetches an OpenAI-compatible `/models` endpoint and emits an opencode provider block. Keep user-facing behavior and setup instructions synchronized with `README.md`. Runtime state under `.codex/`, `.claude/`, `.config/opencode/`, and `.local/share/opencode/` is local and must remain untracked except for the shared instruction files explicitly allowed by `.gitignore`.
 
 ## Build, Test, and Development Commands
 
@@ -20,7 +20,7 @@ Write portable, readable Bash while retaining the existing `#!/usr/bin/env bash`
 
 ## Testing Guidelines
 
-There is currently no automated test framework or coverage threshold. Every shell change should pass `bash -n` and ShellCheck. For launcher or image changes, build the image and smoke-test the affected flow, such as `./agent`, `./agent status`, `./agent exec git status`, and `./agent stop`. Verify port-related changes with a non-default port to avoid local collisions.
+There is currently no automated test framework or coverage threshold. Every shell change should pass `bash -n` and ShellCheck. When modifying the Windows launchers, keep their option handling and defaults in parity with the Bash launcher. For launcher or image changes, build the image and smoke-test the affected flow, such as `./agent`, `./agent status`, `./agent exec git status`, and `./agent stop`. Also verify `./agent exec bash`, `agent codex`, `agent claude`, and `agent opencode` when those code paths change. Verify port-related changes with a non-default port to avoid local collisions, and test `--credentials` / `--credentials-ro` with a scratch profile directory.
 
 ## Commit & Pull Request Guidelines
 

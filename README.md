@@ -41,11 +41,10 @@ improvement._
 The image includes common coding-agent utilities such as:
 
 ```text
-Python
-Ruby
-Bundler
-Node.js
-npm
+Python (managed by mise)
+Ruby / Bundler (managed by mise)
+Node.js / npm (managed by mise)
+uv
 
 Claude Code
 OpenAI Codex
@@ -69,6 +68,10 @@ make
 cmake
 ninja
 pkg-config
+autoconf
+automake
+libtool
+patch
 
 gdb
 strace
@@ -78,7 +81,7 @@ shellcheck
 openssh-client
 openssh-server
 iproute2
-netcat
+netcat-openbsd
 dnsutils
 
 zip
@@ -86,11 +89,13 @@ unzip
 tar
 gzip
 xz
+bzip2
 rsync
 sqlite3
 ansible
 
 Docker CLI
+mise
 ```
 
 Runtime versions are managed by `mise` and pinned by default in the
@@ -129,9 +134,9 @@ Make `agent` available from any directory with:
 ```
 
 This creates `agent` and `agent-container` symlinks in `~/.agent-container/bin`
-and appends that directory to `PATH` in `~/.zshrc` when it is not already
-present. Restart your shell or run `source ~/.zshrc`, then use `agent` anywhere.
-Run `./agent init` again to refresh the shortcuts.
+and appends that directory to `PATH` in `~/.zshrc` when the file exists and the
+entry is not already present. Restart your shell or run `source ~/.zshrc`, then
+use `agent` anywhere. Run `./agent init` again to refresh the shortcuts.
 
 Alternatively, add convenience symlinks manually:
 
@@ -283,11 +288,10 @@ The launcher runs Claude Code with `--dangerously-skip-permissions` by default
 because the container provides the outer isolation boundary. Pass an explicit
 `--permission-mode` option after `claude` to override this default.
 
-Claude Code refuses that flag while running as root, so every container is
-started with `IS_SANDBOX=1`, the environment variable that tells Claude Code
-its surroundings are already sandboxed. The coding agents and the interactive
-shell drop privileges to the unprivileged `agent` user, so this flag is
-accepted.
+Claude Code refuses that flag while running as root, so the launcher starts
+every container with `IS_SANDBOX=1`, the environment variable that tells Claude
+Code its surroundings are already sandboxed. The launcher then drops privileges
+and runs Claude Code as the unprivileged `agent` user, so the flag is accepted.
 
 The container shell applies the same default. Interactive container shells
 define a `claude` wrapper, so typing `claude` in a shell behaves like
@@ -417,7 +421,7 @@ Check whether a container is running for the current workspace:
 agent status
 ```
 
-Example output:
+Example output for a normal shell (no ports published):
 
 ```text
 Agent container is running:
@@ -425,8 +429,12 @@ Agent container is running:
   Name:     agent-f359abc71234
   Image:    agent-container:latest
   Status:   Up 12 minutes
-  Ports:    127.0.0.1:2222->22/tcp, 127.0.0.1:1455->1455/tcp
+  Ports:
 ```
+
+When running `agent codex` with authentication support enabled, the ports
+section shows the published SSH and Codex callback mappings, for example
+`127.0.0.1:2222->22/tcp, 127.0.0.1:1455->1455/tcp`.
 
 ## Listing containers
 
@@ -809,10 +817,11 @@ ignored.
 ## Version configuration
 
 The versions of Debian, the language runtimes, and the coding agents are pinned
-in the `Dockerfile`. These pins reduce version drift between builds, although
-the mutable Debian image tag and unpinned operating-system packages mean builds
-are not fully reproducible. You do not need a `versions.env` file unless you
-want to override one or more defaults.
+in the `Dockerfile`. Language runtimes are installed with `mise`. These pins
+reduce version drift between builds, although the mutable Debian image tag and
+unpinned operating-system packages mean builds are not fully reproducible. You
+do not need a `versions.env` file unless you want to override one or more
+defaults.
 
 To create an override file, copy the provided example:
 
@@ -991,8 +1000,8 @@ agent codex-ssh
 ```
 
 This finds the running agent container that publishes host port 1455, removes
-the saved host key for its mapped SSH port when needed, and opens the tunnel.
-It exits with an error if no such container is running.
+any saved host key for the discovered SSH port, and opens the tunnel. It exits
+with an error if no such container is running.
 
 If the tunnel reports a changed host key, `agent codex-ssh` automatically
 removes the saved key for the discovered SSH port before connecting. If you
