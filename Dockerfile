@@ -28,7 +28,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     NPM_CONFIG_FUND=false \
     NPM_CONFIG_AUDIT=false \
     DISABLE_AUTOUPDATER=1 \
-    CLAUDE_CONFIG_DIR=/root/.claude \
+    CLAUDE_CONFIG_DIR=/home/agent/.claude \
     MISE_DATA_DIR=/usr/local/share/mise \
     MISE_CONFIG_DIR=/etc/mise \
     PATH=/usr/local/share/mise/shims:/usr/local/bin:/usr/bin:/bin
@@ -48,6 +48,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     locales \
     git \
     gh \
+    gosu \
     ripgrep \
     jq \
     minify \
@@ -121,6 +122,12 @@ RUN npm install --global \
       @openai/codex@${CODEX_VERSION} \
       opencode-ai@${OPENCODE_VERSION}
 
+RUN curl -LsSf https://astral.sh/uv/install.sh | UV_NO_MODIFY_PATH=1 sh \
+    && install -m 0755 /root/.local/bin/uv /usr/local/bin/uv \
+    && rm -rf /root/.local
+
+RUN useradd -m -s /bin/bash agent
+
 WORKDIR /workspace
 
 RUN git config --system --add safe.directory '*' \
@@ -128,16 +135,60 @@ RUN git config --system --add safe.directory '*' \
     && git config --system core.autocrlf false \
     && git config --system advice.detachedHead false
 
+# Make `codex`, `claude`, and `opencode` inside an interactive container shell
+# behave like their launcher defaults: the container is the outer sandbox, so
+# default to full-access modes. Explicit override flags still win.
+RUN cat >> /etc/bash.bashrc <<'EOF'
+
+codex() {
+    for arg in "$@"; do
+        case "$arg" in
+            --sandbox|--sandbox=*|-s|-s?*|--dangerously-bypass-approvals-and-sandbox|--yolo)
+                command codex "$@"
+                return
+                ;;
+        esac
+    done
+    command codex --sandbox danger-full-access "$@"
+}
+
+claude() {
+    for arg in "$@"; do
+        case "$arg" in
+            --permission-mode|--permission-mode=*|--dangerously-skip-permissions|--allow-dangerously-skip-permissions)
+                command claude "$@"
+                return
+                ;;
+        esac
+    done
+    command claude --dangerously-skip-permissions "$@"
+}
+
+opencode() {
+    for arg in "$@"; do
+        case "$arg" in
+            --auto|--yolo|--dangerously-skip-permissions)
+                command opencode "$@"
+                return
+                ;;
+        esac
+    done
+    command opencode --dangerously-skip-permissions "$@"
+}
+EOF
+
 RUN mkdir -p \
       /run/sshd \
-      /root/.ssh \
-      /root/.codex \
-      /root/.claude \
-      /root/.cache \
-      /root/.config/opencode \
-      /root/.local/share/opencode \
+      /home/agent/.ssh \
+      /home/agent/.codex \
+      /home/agent/.claude \
+      /home/agent/.cache \
+      /home/agent/.config/opencode \
+      /home/agent/.local/share/opencode \
       /workspace \
-    && chmod 700 /root/.ssh \
+    && chmod 700 /home/agent/.ssh \
+    && chown -R agent:agent /home/agent \
+    && chown agent:agent /workspace \
     && ssh-keygen -A \
     && printf '\nPermitRootLogin yes\nPasswordAuthentication yes\n' >> /etc/ssh/sshd_config \
     && /usr/sbin/sshd -t
@@ -171,7 +222,8 @@ RUN set -eux; \
     ssh -V; \
     claude --version; \
     codex --version; \
-    opencode --version
+    opencode --version; \
+    uv --version
 
 ENTRYPOINT ["/usr/local/bin/agent-entrypoint"]
 CMD ["bash"]

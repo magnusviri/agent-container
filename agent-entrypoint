@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+AGENT_USER=agent
+
 if [[ $# -eq 0 ]]; then
-  exec bash
+  exec gosu "$AGENT_USER" bash
 fi
 
 if [[ "$1" == "codex" && "${CODEX_AUTH_ENABLED:-1}" == 1 ]]; then
@@ -34,4 +36,27 @@ if [[ "$1" == "codex" && "${CODEX_AUTH_ENABLED:-1}" == 1 ]]; then
   /usr/sbin/sshd
 fi
 
-exec "$@"
+case "$1" in
+  codex|claude|opencode)
+    if [[ -t 0 && -t 1 ]]; then
+      trap 'interrupted=1' INT
+
+      interrupted=0
+      exit_status=0
+      gosu "$AGENT_USER" "$@" || exit_status=$?
+
+      echo
+      if [[ "$interrupted" -eq 1 ]]; then
+        echo "Command interrupted."
+      else
+        echo "Command exited (status ${exit_status})."
+      fi
+      echo "Dropping to an interactive shell. Press Ctrl-D or type 'exit' to stop the container."
+      echo
+      printf '%s\n' "$*" >> "/home/${AGENT_USER}/.bash_history"
+      exec gosu "$AGENT_USER" bash
+    fi
+    ;;
+esac
+
+exec gosu "$AGENT_USER" "$@"
