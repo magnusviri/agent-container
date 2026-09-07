@@ -229,7 +229,6 @@ try {
     }
 
     $builtIn = if ($Command.Count) { $Command[0] } else { '' }
-
     if ($builtIn -eq 'init') {
         if ($CredentialsRequested) {
             throw "Credential options cannot be used with 'agent init'; they only apply when creating a container."
@@ -336,8 +335,8 @@ try {
         }
         $CredentialsDirectory = (Get-Item -LiteralPath $CredentialsDirectory).FullName
         $credentialPaths = @(
-            @{ Host = Join-Path $CredentialsDirectory '.ssh'; Container = '/root/.ssh' },
-            @{ Host = Join-Path $CredentialsDirectory '.config/gh'; Container = '/root/.config/gh' }
+            @{ Host = Join-Path $CredentialsDirectory '.ssh'; Container = '/home/agent/.ssh' },
+            @{ Host = Join-Path $CredentialsDirectory '.config/gh'; Container = '/home/agent/.config/gh' }
         )
         foreach ($credentialPath in $credentialPaths) {
             if (Test-Path -LiteralPath $credentialPath.Host) {
@@ -429,10 +428,10 @@ try {
         # is told the surrounding environment is already a sandbox.
         '--env', 'IS_SANDBOX=1',
         '--volume', "$($script:Workspace):/workspace",
-        '--volume', "$(Join-Path $script:AgentHome '.codex'):/root/.codex",
-        '--volume', "$(Join-Path $script:AgentHome '.claude'):/root/.claude",
-        '--volume', "$(Join-Path $script:AgentHome '.config/opencode'):/root/.config/opencode",
-        '--volume', "$(Join-Path $script:AgentHome '.local/share/opencode'):/root/.local/share/opencode"
+        '--volume', "$(Join-Path $script:AgentHome '.codex'):/home/agent/.codex",
+        '--volume', "$(Join-Path $script:AgentHome '.claude'):/home/agent/.claude",
+        '--volume', "$(Join-Path $script:AgentHome '.config/opencode'):/home/agent/.config/opencode",
+        '--volume', "$(Join-Path $script:AgentHome '.local/share/opencode'):/home/agent/.local/share/opencode"
     ) | ForEach-Object { $runArguments.Add($_) }
 
     # Git for Windows may check symlinks out as files containing only their
@@ -443,12 +442,12 @@ try {
     $openCodeInstructions = Join-Path $script:AgentHome '.config/opencode/AGENTS.md'
     if ((Test-Path -LiteralPath $canonicalInstructions -PathType Leaf) -and
         (Test-GitSymlinkPlaceholder $claudeInstructions '../.codex/AGENTS.md')) {
-        @('--volume', "${canonicalInstructions}:/root/.claude/CLAUDE.md:ro") |
+        @('--volume', "${canonicalInstructions}:/home/agent/.claude/CLAUDE.md:ro") |
             ForEach-Object { $runArguments.Add($_) }
     }
     if ((Test-Path -LiteralPath $canonicalInstructions -PathType Leaf) -and
         (Test-GitSymlinkPlaceholder $openCodeInstructions '../../.codex/AGENTS.md')) {
-        @('--volume', "${canonicalInstructions}:/root/.config/opencode/AGENTS.md:ro") |
+        @('--volume', "${canonicalInstructions}:/home/agent/.config/opencode/AGENTS.md:ro") |
             ForEach-Object { $runArguments.Add($_) }
     }
 

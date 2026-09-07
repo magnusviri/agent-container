@@ -263,6 +263,10 @@ The launcher runs Codex with `--sandbox danger-full-access` by default because
 the container provides the outer isolation boundary. Pass an explicit
 `--sandbox` (or `-s`) option after `codex` to override this default.
 
+The same default applies inside the container. Interactive container shells
+define a `codex` wrapper, so typing `codex` in a shell behaves like
+`agent codex`. Passing an explicit `--sandbox` option still overrides it.
+
 When Codex requires authentication, select the ChatGPT sign-in option and open
 the URL it displays. The launcher maps the callback listener to
 `127.0.0.1:1455` on the host, so the browser can complete a normal local login.
@@ -281,7 +285,14 @@ because the container provides the outer isolation boundary. Pass an explicit
 
 Claude Code refuses that flag while running as root, so every container is
 started with `IS_SANDBOX=1`, the environment variable that tells Claude Code
-its surroundings are already sandboxed.
+its surroundings are already sandboxed. The coding agents and the interactive
+shell drop privileges to the unprivileged `agent` user, so this flag is
+accepted.
+
+The container shell applies the same default. Interactive container shells
+define a `claude` wrapper, so typing `claude` in a shell behaves like
+`agent claude`. Passing an explicit `--permission-mode` option still overrides
+it.
 
 ### OpenCode
 
@@ -293,6 +304,11 @@ The launcher runs OpenCode with `--dangerously-skip-permissions` by default
 because the container provides the outer isolation boundary. Pass an explicit
 `--auto`, `--yolo`, or `--dangerously-skip-permissions` option after `opencode`
 to override this default.
+
+The same default applies inside the container. Interactive container shells
+define an `opencode` wrapper, so typing `opencode` in a shell behaves like
+`agent opencode`. Passing an explicit `--auto`, `--yolo`, or
+`--dangerously-skip-permissions` option still overrides it.
 
 ### Generic shell
 
@@ -454,7 +470,7 @@ container.
 is mounted at:
 
 ```text
-/root/.codex
+/home/agent/.codex
 ```
 
 The repository-managed `AGENTS.md` in this directory contains the shared
@@ -469,7 +485,7 @@ container instructions.
 is mounted at:
 
 ```text
-/root/.claude
+/home/agent/.claude
 ```
 
 Its `CLAUDE.md` is a symbolic link to `.codex/AGENTS.md`.
@@ -483,7 +499,7 @@ every new container.
 The image therefore sets:
 
 ```dockerfile
-ENV CLAUDE_CONFIG_DIR=/root/.claude
+ENV CLAUDE_CONFIG_DIR=/home/agent/.claude
 ```
 
 which keeps `.claude.json` and `.credentials.json` together inside the mounted
@@ -504,7 +520,7 @@ OpenCode's global configuration directory:
 is mounted at:
 
 ```text
-/root/.config/opencode
+/home/agent/.config/opencode
 ```
 
 Its `AGENTS.md` is a symbolic link to `../../.codex/AGENTS.md`.
@@ -518,7 +534,7 @@ OpenCode's application data directory:
 is mounted at:
 
 ```text
-/root/.local/share/opencode
+/home/agent/.local/share/opencode
 ```
 
 OpenCode stores authentication, logs, sessions, and other application data in
@@ -660,9 +676,9 @@ The launcher recognizes these directories within the selected profile:
 
 ```text
 ~/.agent-credentials/work/
-├── .ssh/       -> /root/.ssh
+├── .ssh/       -> /home/agent/.ssh
 └── .config/
-    └── gh/     -> /root/.config/gh
+    └── gh/     -> /home/agent/.config/gh
 ```
 
 Either directory may be omitted, but the profile must contain at least one of
@@ -838,7 +854,7 @@ agent build
 
 ## Repository safety
 
-Because host-mounted repositories can have ownership that differs from the root user inside the container, the image configures Git with:
+Because host-mounted repositories can have ownership that differs from the user inside the container, the image configures Git with:
 
 ```bash
 git config --system --add safe.directory '*'
@@ -847,6 +863,21 @@ git config --system --add safe.directory '*'
 This avoids Git's `dubious ownership` error in mounted workspaces.
 
 Only use this configuration in an environment where mounting arbitrary untrusted repositories is acceptable.
+
+## Non-root user
+
+The container runs an unprivileged `agent` user instead of `root`. The
+interactive shell and the `codex`, `claude`, and `opencode` commands all run as
+`agent`, whose home directory is `/home/agent`. Their persistent state lives
+under `/home/agent` rather than `/root`.
+
+This keeps `/root` and other system locations out of reach of the coding
+agents. The tools can still read and write everything under `/workspace`
+(eventually) and their own state under `/home/agent`.
+
+Only the `sshd` that powers Codex authentication runs as `root`; it is started
+in codex mode and must keep root privileges to present a login shell, but the
+agents themselves never run with root privileges.
 
 ## Security notes
 

@@ -115,7 +115,8 @@ Behavior:
       after claude to override.
 
       Every container sets IS_SANDBOX=1, which is what lets Claude Code accept
-      that flag while running as root.
+      that flag. The container runs as the unprivileged 'agent' user rather
+      than root.
 
   agent opencode
       Start OpenCode.
@@ -190,8 +191,8 @@ Options:
       Share credentials from a home-style profile directory, read-write.
 
       Supported directories are mounted when present:
-        DIR/.ssh       -> /root/.ssh
-        DIR/.config/gh -> /root/.config/gh
+        DIR/.ssh       -> /home/agent/.ssh
+        DIR/.config/gh -> /home/agent/.config/gh
 
   --credentials-ro DIR
       Share the same supported credential directories read-only.
@@ -240,16 +241,16 @@ Persistent state:
   The following directories are mounted into every agent container:
 
     ~/.agent-container/.codex
-        -> /root/.codex
+        -> /home/agent/.codex
 
     ~/.agent-container/.claude
-        -> /root/.claude
+        -> /home/agent/.claude
 
     ~/.agent-container/.config/opencode
-        -> /root/.config/opencode
+        -> /home/agent/.config/opencode
 
     ~/.agent-container/.local/share/opencode
-        -> /root/.local/share/opencode
+        -> /home/agent/.local/share/opencode
 
 Workspace:
   The current physical directory is mounted at:
@@ -791,13 +792,13 @@ if [[ "$CREDENTIALS_REQUESTED" == 1 ]]; then
 
     if [[ -d "$SSH_CREDENTIALS_DIR" ]]; then
         CREDENTIAL_MOUNT_ARGS+=(
-            --volume "$SSH_CREDENTIALS_DIR:/root/.ssh${CREDENTIAL_VOLUME_SUFFIX}"
+            --volume "$SSH_CREDENTIALS_DIR:/home/agent/.ssh${CREDENTIAL_VOLUME_SUFFIX}"
         )
     fi
 
     if [[ -d "$GITHUB_CREDENTIALS_DIR" ]]; then
         CREDENTIAL_MOUNT_ARGS+=(
-            --volume "$GITHUB_CREDENTIALS_DIR:/root/.config/gh${CREDENTIAL_VOLUME_SUFFIX}"
+            --volume "$GITHUB_CREDENTIALS_DIR:/home/agent/.config/gh${CREDENTIAL_VOLUME_SUFFIX}"
         )
     fi
 
@@ -938,10 +939,10 @@ RUN_ARGS=(
 
     --volume "$WORKSPACE:/workspace"
 
-    --volume "$AGENT_HOME/.codex:/root/.codex"
-    --volume "$AGENT_HOME/.claude:/root/.claude"
-    --volume "$AGENT_HOME/.config/opencode:/root/.config/opencode"
-    --volume "$AGENT_HOME/.local/share/opencode:/root/.local/share/opencode"
+    --volume "$AGENT_HOME/.codex:/home/agent/.codex"
+    --volume "$AGENT_HOME/.claude:/home/agent/.claude"
+    --volume "$AGENT_HOME/.config/opencode:/home/agent/.config/opencode"
+    --volume "$AGENT_HOME/.local/share/opencode:/home/agent/.local/share/opencode"
 )
 
 RUN_ARGS+=("${CREDENTIAL_MOUNT_ARGS[@]}")
