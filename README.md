@@ -460,7 +460,9 @@ Stop the agent container associated with the current project:
 agent stop
 ```
 
-The containers use `--rm`, so Docker removes the container after it exits.
+Containers stay around after they exit so you can inspect logs, reuse the
+filesystem, or restart them. To remove the container for the current workspace,
+use `agent delete`.
 
 Persistent AI-agent state is stored on the host and is not removed.
 
@@ -777,6 +779,12 @@ Stop it:
 
 ```bash
 agent stop
+```
+
+Delete it when you are done:
+
+```bash
+agent delete
 ```
 
 ## Directory layout

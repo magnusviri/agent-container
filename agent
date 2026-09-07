@@ -59,6 +59,7 @@ Usage:
   agent build [docker-build-options...]
   agent exec [command...]
   agent stop
+  agent delete
   agent status
   agent list
 
@@ -137,6 +138,11 @@ Behavior:
 
   agent stop
       Stop the running agent container for the current workspace.
+
+  agent delete
+      Delete the agent container for the current workspace, if it exists.
+
+      Works whether the container is running or stopped.
 
   agent status
       Show whether an agent container is running for the current workspace.
@@ -287,6 +293,8 @@ Examples:
   agent status
 
   agent stop
+
+  agent delete
 EOF
 }
 
@@ -574,7 +582,7 @@ done
 
 if [[ ${#COMMAND[@]} -gt 0 ]]; then
     case "${COMMAND[0]}" in
-        build|exec|stop|status|list|ls|init)
+        build|exec|stop|delete|status|list|ls|init)
             if [[ "$CREDENTIALS_REQUESTED" == 1 ]]; then
                 echo "Credential options cannot be used with 'agent ${COMMAND[0]}'." >&2
                 echo "They only apply when creating a new container." >&2
@@ -679,6 +687,20 @@ if [[ ${#COMMAND[@]} -gt 0 ]]; then
             exit 0
             ;;
 
+        delete)
+            container="$(find_existing_container)"
+
+            if [[ -z "$container" ]]; then
+                echo "No agent container to delete for:"
+                echo "  $WORKSPACE"
+                exit 0
+            fi
+
+            echo "Deleting agent container $container"
+            docker rm -f "$container" >/dev/null
+            exit 0
+            ;;
+
         status)
             container="$(find_running_container)"
 
@@ -752,6 +774,7 @@ if [[ -n "$RUNNING_CONTAINER" ]]; then
     echo "  agent"
     echo "  agent exec <command>"
     echo "  agent stop"
+    echo "  agent delete"
     exit 1
 fi
 
@@ -810,12 +833,12 @@ if [[ "$CREDENTIALS_REQUESTED" == 1 ]]; then
     fi
 fi
 
-# A stopped container should normally not exist because we use --rm, but remove
-# one if a previous Docker invocation left it behind.
+# A stopped container for this workspace may exist from a previous session. If
+# so, remove it before creating a new one so each workspace has one container.
 EXISTING_CONTAINER="$(find_existing_container)"
 
 if [[ -n "$EXISTING_CONTAINER" ]]; then
-    docker rm "$EXISTING_CONTAINER" >/dev/null
+    docker rm -f "$EXISTING_CONTAINER" >/dev/null
 fi
 
 # -----------------------------------------------------------------------------
@@ -920,7 +943,6 @@ mkdir -p \
 # -----------------------------------------------------------------------------
 
 RUN_ARGS=(
-    --rm
     "${IO_ARGS[@]}"
     --init
 

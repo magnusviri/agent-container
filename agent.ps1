@@ -11,6 +11,7 @@ Usage:
   agent build [docker-build-options...]
   agent exec [command...]
   agent stop
+  agent delete
   agent status
   agent list
 
@@ -26,6 +27,7 @@ Commands:
   init                     Add the install directory to the user PATH so
                            'agent' runs from any new terminal window.
   stop                     Stop the current workspace container.
+  delete                   Delete the current workspace container, if it exists.
   status                   Show the current workspace container.
   list, ls                 List all running agent containers.
 
@@ -256,7 +258,7 @@ try {
 
     Assert-DockerAvailable
 
-    if ($CredentialsRequested -and $builtIn -in @('build', 'exec', 'stop', 'status', 'list', 'ls')) {
+    if ($CredentialsRequested -and $builtIn -in @('build', 'exec', 'stop', 'delete', 'status', 'list', 'ls')) {
         throw "Credential options cannot be used with 'agent $builtIn'; they only apply when creating a container."
     }
 
@@ -300,6 +302,14 @@ try {
         Invoke-Docker @('stop', $container)
     }
 
+    if ($builtIn -eq 'delete') {
+        $container = Get-MatchingContainer -IncludeStopped
+        if (-not $container) { Write-Output "No agent container to delete for:`n  $script:Workspace"; exit 0 }
+        Write-Output "Deleting agent container $container"
+        & docker rm -f $container | Out-Null
+        exit $LASTEXITCODE
+    }
+
     if ($builtIn -eq 'status') {
         $container = Get-MatchingContainer
         if (-not $container) { Write-Output "No agent container is running for:`n  $script:Workspace"; exit 1 }
@@ -322,7 +332,7 @@ try {
         Invoke-Docker $execArguments
     }
     if ($runningContainer) {
-        throw "An agent container is already running for this workspace:`n  $script:Workspace`nUse 'agent', 'agent exec <command>', or 'agent stop'."
+        throw "An agent container is already running for this workspace:`n  $script:Workspace`nUse 'agent', 'agent exec <command>', 'agent stop', or 'agent delete'."
     }
 
 
@@ -415,7 +425,7 @@ try {
     }
 
     $runArguments = [System.Collections.Generic.List[string]]::new()
-    @('run', '--rm', '--interactive') | ForEach-Object { $runArguments.Add($_) }
+    @('run', '--interactive') | ForEach-Object { $runArguments.Add($_) }
     if (-not [Console]::IsInputRedirected -and -not [Console]::IsOutputRedirected) { $runArguments.Add('--tty') }
     @(
         '--init', '--name', $ContainerName,
