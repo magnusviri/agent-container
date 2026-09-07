@@ -833,12 +833,49 @@ if [[ "$CREDENTIALS_REQUESTED" == 1 ]]; then
     fi
 fi
 
-# A stopped container for this workspace may exist from a previous session. If
-# so, remove it before creating a new one so each workspace has one container.
 EXISTING_CONTAINER="$(find_existing_container)"
 
 if [[ -n "$EXISTING_CONTAINER" ]]; then
-    docker rm -f "$EXISTING_CONTAINER" >/dev/null
+    if [[ ! -t 0 ]]; then
+        echo "An existing agent container was found for this workspace:" >&2
+        echo "  $WORKSPACE" >&2
+        echo "  $EXISTING_CONTAINER" >&2
+        echo >&2
+        echo "Run interactively to choose whether to reuse or delete it," >&2
+        echo "or run 'agent delete' first." >&2
+        exit 1
+    fi
+
+    echo "An existing agent container was found for this workspace:"
+    echo "  $WORKSPACE"
+    echo
+    echo "Container:"
+    echo "  $EXISTING_CONTAINER"
+    echo
+
+    if ! read -r -p "Use existing container, delete it, or cancel? [u/d/C] " response; then
+        echo >&2
+        exit 1
+    fi
+
+    case "$response" in
+        d|D)
+            echo "Deleting existing container..."
+            docker rm -f "$EXISTING_CONTAINER" >/dev/null
+            ;;
+        u|U)
+            echo "Attaching to existing container..."
+            exec docker exec \
+                "${IO_ARGS[@]}" \
+                --workdir /workspace \
+                "$EXISTING_CONTAINER" \
+                bash
+            ;;
+        *)
+            echo "Cancelled."
+            exit 1
+            ;;
+    esac
 fi
 
 # -----------------------------------------------------------------------------
