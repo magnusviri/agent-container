@@ -15,37 +15,236 @@ Usage:
   agent status
   agent list
 
-Commands:
-  codex, claude, opencode  Start a coding agent in the workspace container.
-                           Codex defaults to --sandbox danger-full-access and
-                           Claude Code and OpenCode to
-                           --dangerously-skip-permissions, because the
-                           container is the isolation boundary.
-  build [OPTIONS...]       Build the image; pass options to docker build.
-  codex-ssh                Open the Codex authentication SSH tunnel.
-  exec [COMMAND...]        Run a command in the current workspace container.
-  init                     Add the install directory to the user PATH so
-                           'agent' runs from any new terminal window.
-  stop                     Stop the current workspace container.
-  delete                   Delete the current workspace container, if it exists.
-  status                   Show the current workspace container.
-  list, ls                 List all running agent containers.
+Behavior:
+  agent
+      If a container is already running for the current directory, attach to
+      it with an interactive shell.
+
+      If no container is running, start a new container with a shell.
+
+      If the configured image does not exist, offer to build it before starting
+      the container.
+
+  agent build [OPTIONS...]
+      Build the configured agent image. Options are passed to docker build.
+
+  agent init
+      Install shortcuts for the launcher itself.
+
+      Creates 'agent' and 'agent-container' shortcuts in:
+
+        ~/.agent-container/bin
+
+      and appends that directory to the user PATH. Run it again to refresh the
+      shortcuts and PATH entry.
+
+  agent codex
+      Start Codex in a new agent container.
+
+      Codex defaults to --sandbox danger-full-access because the container
+      provides the outer isolation boundary. Pass --sandbox or -s to override.
+
+      When no persisted Codex login exists, Codex mode automatically publishes:
+        container 22   -> an available host SSH port
+        container 1455 -> host port 1455
+
+      If ~/.agent-container/.codex/auth.json exists, authentication support is
+      disabled automatically because Codex can use the persisted login.
+
+      The launcher finds an available SSH host port starting at 2222.
+
+  agent codex-ssh
+      Open an SSH tunnel to the agent container publishing host port 1455.
+
+      The SSH host port is discovered from that container's port mapping.
+      Exits with an error if no running agent container publishes port 1455.
+
+  agent claude
+      Start Claude Code.
+
+      Claude Code defaults to --dangerously-skip-permissions because the
+      container provides the outer isolation boundary. Pass --permission-mode,
+      --dangerously-skip-permissions, or --allow-dangerously-skip-permissions
+      after claude to override.
+
+      Every container sets IS_SANDBOX=1, which is what lets Claude Code accept
+      that flag. The container runs as the unprivileged 'agent' user rather
+      than root.
+
+  agent opencode
+      Start OpenCode.
+
+      OpenCode defaults to --dangerously-skip-permissions because the
+      container provides the outer isolation boundary. Pass --auto, --yolo,
+      or --dangerously-skip-permissions after opencode to override.
+
+  agent exec COMMAND...
+      Execute COMMAND inside the running agent container for the current
+      workspace.
+
+      Examples:
+        agent exec bash
+        agent exec git status
+        agent exec npm test
+        agent exec bundle exec rspec
+
+  agent stop
+      Stop the running agent container for the current workspace.
+
+  agent delete
+      Delete the agent container for the current workspace, if it exists.
+
+      Works whether the container is running or stopped.
+
+  agent status
+      Show whether an agent container is running for the current workspace.
+
+  agent list
+      List running agent containers with their IDs, names, images, statuses,
+      ports, and host workspace paths.
 
 Options:
-  -p, --port PORT          Publish a port (for example 3000 or 8080:3000).
-  --ssh-port PORT          Host port mapped to container SSH port 22.
-  --codex-port PORT        Host port mapped to the Codex callback port 1455.
-  --no-codex-auth          Disable Codex authentication ports and sshd.
-  --credentials DIR        Mount supported credentials read-write.
-  --credentials-ro DIR     Mount supported credentials read-only.
-  --docker-arg ARG         Pass one additional argument to docker run.
-  -h, --help               Show this help.
+  -p, --port PORT
+      Publish an additional port.
+
+      Examples:
+        -p 3000
+        -p 3000:3000
+        -p 8080:3000
+        -p 127.0.0.1:3000:3000
+
+      A single port such as:
+
+        -p 3000
+
+      is interpreted as:
+
+        -p 3000:3000
+
+  --ssh-port PORT
+      Host port to map to container SSH port 22.
+
+      This is only published automatically when running:
+
+        agent codex
+
+      If omitted, the launcher chooses the first available port starting at
+      2222.
+
+  --codex-port PORT
+      Host port mapped to container port 1455.
+
+      Default:
+        1455
+
+      This port is only published automatically when running:
+
+        agent codex
+
+  --no-codex-auth
+      Disable Codex authentication support. Neither the SSH tunnel port nor
+      callback port 1455 is published, and sshd is not started.
+
+  --credentials DIR
+      Share credentials from a home-style profile directory, read-write.
+
+      Supported directories are mounted when present:
+        DIR/.ssh       -> /home/agent/.ssh
+        DIR/.config/gh -> /home/agent/.config/gh
+
+  --credentials-ro DIR
+      Share the same supported credential directories read-only.
+
+      Credential sharing only applies when creating a new container. It is
+      never enabled by default.
+
+  --docker-arg ARG
+      Pass an additional argument directly to docker run.
+
+      Can be specified multiple times.
+
+      Example:
+        agent --docker-arg --privileged codex
+
+  -h, --help
+      Show this help.
 
 Environment:
-  AI_AGENT_HOME            State directory (default: ~/.agent-container).
-  AI_AGENT_IMAGE           Image name (default: agent-container:latest).
-  AI_AGENT_SSH_PORT        Preferred Codex SSH port.
-  AI_AGENT_CODEX_PORT      Codex callback host port (default: 1455).
+  AI_AGENT_HOME
+      Agent configuration and persistent-state directory.
+
+      Default:
+        ~/.agent-container
+
+  AI_AGENT_IMAGE
+      Docker image to run.
+
+      Default:
+        agent-container:latest
+
+  AI_AGENT_SSH_PORT
+      Preferred host SSH port for Codex mode.
+
+      If unset, the launcher automatically finds an available port.
+
+  AI_AGENT_CODEX_PORT
+      Host port for the Codex callback.
+
+      Default:
+        1455
+
+Persistent state:
+  The following directories are mounted into every agent container:
+
+    ~/.agent-container/.codex
+        -> /home/agent/.codex
+
+    ~/.agent-container/.claude
+        -> /home/agent/.claude
+
+    ~/.agent-container/.config/opencode
+        -> /home/agent/.config/opencode
+
+    ~/.agent-container/.local/share/opencode
+        -> /home/agent/.local/share/opencode
+
+Workspace:
+  The current directory is mounted at:
+
+    /workspace
+
+Examples:
+  agent init
+
+  agent
+
+  agent codex
+
+  agent claude
+
+  agent opencode
+
+  agent -p 3000 codex
+
+  agent -p 3000 -p 5173 claude
+
+  agent --ssh-port 2222 codex
+
+  agent --credentials "$HOME/.agent-credentials/work" codex
+
+  agent --credentials-ro "$HOME/.agent-credentials/personal" claude
+
+  agent exec bash
+
+  agent exec git status
+
+  agent exec npm test
+
+  agent status
+
+  agent stop
+
+  agent delete
 '@ | Write-Output
 }
 
@@ -237,22 +436,41 @@ try {
         }
 
         $installDirectory = $PSScriptRoot.TrimEnd('\')
+        $binDirectory = Join-Path $script:AgentHome 'bin'
+        $null = New-Item -ItemType Directory -Force -Path $binDirectory
+
+        $agentCmdShortcut = Join-Path $binDirectory 'agent.cmd'
+        $agentPs1Shortcut = Join-Path $binDirectory 'agent.ps1'
+        $agentContainerCmdShortcut = Join-Path $binDirectory 'agent-container.cmd'
+        $agentContainerPs1Shortcut = Join-Path $binDirectory 'agent-container.ps1'
+
+        $cmdBody = "@echo off`r`n`"%~dp0agent.ps1`" %*`r`nexit /b %ERRORLEVEL%"
+        $ps1Body = "& `"$($installDirectory.Replace('\', '\\'))\\agent.ps1`" @args"
+
+        Set-Content -LiteralPath $agentCmdShortcut -Value $cmdBody -NoNewline -Encoding ASCII
+        Set-Content -LiteralPath $agentContainerCmdShortcut -Value $cmdBody -NoNewline -Encoding ASCII
+        Set-Content -LiteralPath $agentPs1Shortcut -Value $ps1Body -NoNewline -Encoding ASCII
+        Set-Content -LiteralPath $agentContainerPs1Shortcut -Value $ps1Body -NoNewline -Encoding ASCII
+
         $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
         $pathEntries = @($userPath -split ';' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
-        $alreadyPresent = $pathEntries | Where-Object { $_.TrimEnd('\') -ieq $installDirectory }
+        $alreadyPresent = $pathEntries | Where-Object { $_.TrimEnd('\') -ieq $binDirectory }
 
         if ($alreadyPresent) {
-            Write-Output "PATH already contains $installDirectory."
+            Write-Output "PATH already contains $binDirectory."
         } else {
-            $newPath = if ($userPath) { "$userPath;$installDirectory" } else { $installDirectory }
+            $newPath = if ($userPath) { "$userPath;$binDirectory" } else { $binDirectory }
             [Environment]::SetEnvironmentVariable('Path', $newPath, 'User')
-            Write-Output "Added $installDirectory to the user PATH."
+            Write-Output "Added $binDirectory to the user PATH."
         }
 
         Write-Output ''
-        Write-Output 'Shortcuts are installed. Open a new terminal window so the'
-        Write-Output 'PATH change takes effect, then run:'
-        Write-Output '  agent'
+        Write-Output 'Installed shortcuts:'
+        Write-Output "  $agentCmdShortcut"
+        Write-Output "  $agentContainerCmdShortcut"
+        Write-Output ''
+        Write-Output 'Open a new terminal window so the PATH change takes effect,'
+        Write-Output 'then use agent or agent-container from anywhere.'
         exit 0
     }
 
@@ -299,7 +517,8 @@ try {
         $container = Get-MatchingContainer
         if (-not $container) { Write-Output "No running agent container for:`n  $script:Workspace"; exit 0 }
         Write-Output "Stopping agent container $container"
-        Invoke-Docker @('stop', $container)
+        & docker stop $container | Out-Null
+        exit 0
     }
 
     if ($builtIn -eq 'delete') {
@@ -307,7 +526,7 @@ try {
         if (-not $container) { Write-Output "No agent container to delete for:`n  $script:Workspace"; exit 0 }
         Write-Output "Deleting agent container $container"
         & docker rm -f $container | Out-Null
-        exit $LASTEXITCODE
+        exit 0
     }
 
     if ($builtIn -eq 'status') {
@@ -331,8 +550,8 @@ try {
         $execArguments += @('--workdir', '/workspace', $runningContainer, 'bash')
         Invoke-Docker $execArguments
     }
-    if ($runningContainer) {
-        throw "An agent container is already running for this workspace:`n  $script:Workspace`nUse 'agent', 'agent exec <command>', 'agent stop', or 'agent delete'."
+        if ($runningContainer) {
+        throw "An agent container is already running for this workspace:`n  $script:Workspace`n`nContainer:`n  $runningContainer`n`nUse one of:`n  agent`n  agent exec <command>`n  agent stop`n  agent delete"
     }
 
 
@@ -359,14 +578,41 @@ try {
             }
         }
         if (-not $CredentialMountArguments.Count) {
-            throw "Credential profile contains no .ssh or .config/gh directory: $CredentialsDirectory"
+            throw "Credential profile contains no supported credential directories:`n  $CredentialsDirectory`nExpected .ssh and/or .config/gh."
         }
     }
 
     $existingContainer = Get-MatchingContainer -IncludeStopped
     if ($existingContainer) {
-        & docker rm $existingContainer | Out-Null
-        if ($LASTEXITCODE -ne 0) { throw "Unable to remove stale container $existingContainer." }
+        if ([Console]::IsInputRedirected) {
+            & docker rm -f $existingContainer | Out-Null
+        } else {
+            $response = $null
+            Write-Output "An existing agent container was found for this workspace:"
+            Write-Output "  $script:Workspace"
+            Write-Output ''
+            Write-Output "Container:"
+            Write-Output "  $existingContainer"
+            Write-Output ''
+            $prompt = Read-Host 'Use existing container, delete it, or cancel? [u/d/C]'
+            switch ($prompt) {
+                { $_ -match '^(?i:d)$' } {
+                    Write-Output 'Deleting existing container...'
+                    & docker rm -f $existingContainer | Out-Null
+                    if ($LASTEXITCODE -ne 0) { throw "Unable to remove container $existingContainer." }
+                }
+                { $_ -match '^(?i:u)$' } {
+                    Write-Output 'Attaching to existing container...'
+                    $execArguments = @('exec', '--interactive')
+                    if (-not [Console]::IsInputRedirected -and -not [Console]::IsOutputRedirected) { $execArguments += '--tty' }
+                    $execArguments += @('--workdir', '/workspace', $existingContainer, 'bash')
+                    Invoke-Docker $execArguments
+                }
+                default {
+                    throw 'Cancelled.'
+                }
+            }
+        }
     }
 
     $PublishSsh = $false
