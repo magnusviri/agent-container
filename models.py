@@ -46,11 +46,30 @@ def extract_models(data):
     return result
 
 
-def convert_models(data):
+def derive_base_url(url):
+    """Derive the provider baseURL from a /models endpoint URL."""
+    return re.sub(r"/models/?$", "", url)
+
+
+def build_config(data, provider_key, provider_npm, provider_name, base_url):
     models = extract_models(data)
     if not models:
         raise ValueError("No models found at the endpoint")
-    return {"models": models}
+
+    return {
+        "$schema": "https://opencode.ai/config.json",
+        "provider": {
+            provider_key: {
+                "npm": provider_npm,
+                "name": provider_name,
+                "options": {
+                    "baseURL": base_url,
+                },
+                "models": models,
+            }
+        },
+        "model": f"{provider_key}/YOUR-MODEL-ID",
+    }
 
 
 def main(argv=None):
@@ -73,6 +92,25 @@ def main(argv=None):
         help="Skip TLS certificate verification (use only for trusted hosts "
         "such as local proxies with self-signed certificates)",
     )
+    parser.add_argument(
+        "--provider",
+        default="lmstudio",
+        help="Provider key in the opencode config (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--npm",
+        default="@ai-sdk/openai-compatible",
+        help="AI SDK npm package for the provider (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--name",
+        default="LM Studio (Docker)",
+        help="Human-readable provider name (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--base-url",
+        help="Override the provider baseURL; by default it is inferred from the /models URL",
+    )
     args = parser.parse_args(argv)
 
     url = args.url
@@ -84,10 +122,18 @@ def main(argv=None):
         )
         return 1
 
+    base_url = args.base_url if args.base_url else derive_base_url(url)
+
     result = None
     try:
-        data = get_models(args.url, args.timeout, args.insecure)
-        result = convert_models(data)
+        data = get_models(url, args.timeout, args.insecure)
+        result = build_config(
+            data,
+            args.provider,
+            args.npm,
+            args.name,
+            base_url,
+        )
     except (RuntimeError, ValueError) as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1
