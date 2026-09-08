@@ -328,6 +328,10 @@ If a container is already running for that project, it attaches to the running c
 docker exec -it <container-id> bash
 ```
 
+If a stopped container exists for the project, it is started instead of creating a
+new one. The container stays up while interactive terminals are attached and is
+stopped once the last interactive terminal exits.
+
 This makes it easy to open multiple terminals into the same agent environment.
 
 ## Workspace-specific containers

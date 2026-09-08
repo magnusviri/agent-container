@@ -20,7 +20,10 @@ Behavior:
       If a container is already running for the current directory, attach to
       it with an interactive shell.
 
-      If no container is running, start a new container with a shell.
+      If no container is running but a stopped container exists, offer to start
+      it. When the last interactive terminal exits, the container is stopped.
+
+      If no container exists, start a new container with a shell.
 
       If the configured image does not exist, offer to build it before starting
       the container.
@@ -363,6 +366,63 @@ function Invoke-Docker {
     exit $LASTEXITCODE
 }
 
+function Remove-StaleSessionMarkers {
+    param([string] $ContainerName)
+
+    if (-not (Test-Path -LiteralPath $script:SessionsDir -PathType Container)) { return }
+    $markers = Get-ChildItem -LiteralPath $script:SessionsDir -Filter "$ContainerName.*" -ErrorAction SilentlyContinue
+    foreach ($marker in $markers) {
+        $name = [string] $marker.Name
+        $separator = $name.LastIndexOf('.')
+        if ($separator -lt 0) { continue }
+        $processId = 0
+        if (-not [int]::TryParse($name.Substring($separator + 1), [ref] $processId)) { continue }
+        if ($processId -eq $PID) { continue }
+        if (-not (Get-Process -Id $processId -ErrorAction SilentlyContinue)) {
+            Remove-Item -LiteralPath $marker.FullName -Force
+        }
+    }
+}
+
+function Add-SessionMarker {
+    param([string] $ContainerName)
+
+    New-Item -ItemType Directory -Force -Path $script:SessionsDir | Out-Null
+    Remove-StaleSessionMarkers $ContainerName
+    New-Item -ItemType File -Force -Path (Join-Path $script:SessionsDir "$ContainerName.$PID") | Out-Null
+}
+
+function Remove-SessionMarker {
+    param([string] $ContainerName)
+
+    Remove-Item -LiteralPath (Join-Path $script:SessionsDir "$ContainerName.$PID") -Force -ErrorAction SilentlyContinue
+    Remove-StaleSessionMarkers $ContainerName
+    $markers = @(Get-ChildItem -LiteralPath $script:SessionsDir -Filter "$ContainerName.*" -ErrorAction SilentlyContinue)
+    if ($markers.Count -gt 0) { return }
+
+    $running = Get-MatchingContainer
+    if (-not $running) { return }
+    Write-Output "Stopping agent container $running"
+    & docker stop $running | Out-Null
+}
+
+function Invoke-InteractiveDocker {
+    param(
+        [string] $ContainerName,
+        [string[]] $DockerArguments
+    )
+
+    Add-SessionMarker $ContainerName
+    try {
+        & docker @DockerArguments
+        $exitCode = $LASTEXITCODE
+    }
+    finally {
+        Remove-SessionMarker $ContainerName
+    }
+    exit $exitCode
+}
+
 try {
     $script:AgentHome = if ($env:AI_AGENT_HOME) {
         [System.IO.Path]::GetFullPath($env:AI_AGENT_HOME)
@@ -379,6 +439,7 @@ try {
     $script:WorkspaceId = -join ($hashBytes | ForEach-Object { $_.ToString('x2') })
     $script:WorkspaceId = $script:WorkspaceId.Substring(0, 12)
     $ContainerName = "agent-$($script:WorkspaceId)"
+    $script:SessionsDir = Join-Path $script:AgentHome 'sessions'
 
     $ExtraPorts = [System.Collections.Generic.List[string]]::new()
     $DockerRunArguments = [System.Collections.Generic.List[string]]::new()
@@ -507,9 +568,13 @@ try {
     if ($builtIn -eq 'exec') {
         $container = Get-RunningContainer
         $execArguments = @('exec', '--interactive')
-        if (-not [Console]::IsInputRedirected -and -not [Console]::IsOutputRedirected) { $execArguments += '--tty' }
+        $interactive = -not [Console]::IsInputRedirected -and -not [Console]::IsOutputRedirected
+        if ($interactive) { $execArguments += '--tty' }
         $execArguments += @('--workdir', '/workspace', $container)
         if ($Command.Count -eq 1) { $execArguments += 'bash' } else { $execArguments += $Command.GetRange(1, $Command.Count - 1) }
+        if ($interactive -and $Command.Count -eq 1) {
+            Invoke-InteractiveDocker $ContainerName $execArguments
+        }
         Invoke-Docker $execArguments
     }
 
@@ -546,8 +611,12 @@ try {
         if ($CredentialsRequested) { throw 'Credential mounts require a new container. Run agent stop first.' }
         Write-Output "Attaching to agent container $runningContainer"
         $execArguments = @('exec', '--interactive')
-        if (-not [Console]::IsInputRedirected -and -not [Console]::IsOutputRedirected) { $execArguments += '--tty' }
+        $interactive = -not [Console]::IsInputRedirected -and -not [Console]::IsOutputRedirected
+        if ($interactive) { $execArguments += '--tty' }
         $execArguments += @('--workdir', '/workspace', $runningContainer, 'bash')
+        if ($interactive) {
+            Invoke-InteractiveDocker $ContainerName $execArguments
+        }
         Invoke-Docker $execArguments
     }
         if ($runningContainer) {
@@ -606,8 +675,12 @@ try {
                     & docker start $existingContainer | Out-Null
                     Write-Output 'Attaching to existing container...'
                     $execArguments = @('exec', '--interactive')
-                    if (-not [Console]::IsInputRedirected -and -not [Console]::IsOutputRedirected) { $execArguments += '--tty' }
+                    $interactive = -not [Console]::IsInputRedirected -and -not [Console]::IsOutputRedirected
+                    if ($interactive) { $execArguments += '--tty' }
                     $execArguments += @('--workdir', '/workspace', $existingContainer, 'bash')
+                    if ($interactive) {
+                        Invoke-InteractiveDocker $ContainerName $execArguments
+                    }
                     Invoke-Docker $execArguments
                 }
                 default {
@@ -727,7 +800,7 @@ try {
     $DockerRunArguments | ForEach-Object { $runArguments.Add($_) }
     $runArguments.Add($script:Image)
     $Command | ForEach-Object { $runArguments.Add($_) }
-    Invoke-Docker $runArguments.ToArray()
+    Invoke-InteractiveDocker $ContainerName $runArguments.ToArray()
 }
 catch {
     [Console]::Error.WriteLine($_.Exception.Message)

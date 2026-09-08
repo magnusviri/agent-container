@@ -28,6 +28,8 @@ WORKSPACE_ID="$(
 
 CONTAINER_NAME="agent-${WORKSPACE_ID}"
 
+SESSIONS_DIR="$AGENT_HOME/sessions"
+
 EXTRA_PORTS=()
 DOCKER_ARGS=()
 COMMAND=()
@@ -68,7 +70,10 @@ Behavior:
       If a container is already running for the current directory, attach to it
       with an interactive Bash shell.
 
-      If no container is running, start a new container with Bash.
+      If no container is running but a stopped container exists, offer to start
+      it. When the last interactive terminal exits, the container is stopped.
+
+      If no container exists, start a new container with Bash.
 
       If the configured image does not exist, offer to build it before starting
       the container.
@@ -405,6 +410,64 @@ find_existing_container() {
         | head -n 1
 }
 
+interactive_tty() {
+    local arg
+
+    for arg in "${IO_ARGS[@]}"; do
+        [[ "$arg" == "--tty" ]] && return 0
+    done
+
+    return 1
+}
+
+prune_sessions() {
+    local entry pid
+
+    for entry in "$SESSIONS_DIR"/"$CONTAINER_NAME".*; do
+        [[ -e "$entry" ]] || continue
+        pid="${entry##*.}"
+
+        if [[ "$pid" =~ ^[0-9]+$ ]] \
+            && [[ "$pid" != "$$" ]] \
+            && ! kill -0 "$pid" 2>/dev/null; then
+            rm -f "$entry"
+        fi
+    done
+}
+
+begin_session() {
+    mkdir -p "$SESSIONS_DIR"
+    prune_sessions
+    : > "$SESSIONS_DIR/$CONTAINER_NAME.$$"
+}
+
+# shellcheck disable=SC2317 # invoked through the EXIT trap in run_interactive
+end_session() {
+    local entry running
+
+    rm -f "$SESSIONS_DIR/$CONTAINER_NAME.$$"
+    prune_sessions
+
+    for entry in "$SESSIONS_DIR"/"$CONTAINER_NAME".*; do
+        [[ -e "$entry" ]] && return 0
+    done
+
+    running="$(find_running_container)"
+    [[ -n "$running" ]] || return 0
+
+    echo "Stopping agent container $running"
+    docker stop "$running" >/dev/null 2>&1 || true
+}
+
+run_interactive() {
+    local rc=0
+
+    begin_session
+    trap end_session EXIT
+    "$@" || rc=$?
+    exit "$rc"
+}
+
 build_image() {
     local env_file="$AGENT_HOME/versions.env"
     local line key value
@@ -659,6 +722,14 @@ if [[ ${#COMMAND[@]} -gt 0 ]]; then
             container="$(require_running_container)"
 
             if [[ ${#COMMAND[@]} -eq 1 ]]; then
+                if interactive_tty; then
+                    run_interactive docker exec \
+                        "${IO_ARGS[@]}" \
+                        --workdir /workspace \
+                        "$container" \
+                        bash
+                fi
+
                 exec docker exec \
                     "${IO_ARGS[@]}" \
                     --workdir /workspace \
@@ -744,6 +815,14 @@ if [[ ${#COMMAND[@]} -eq 0 ]]; then
         fi
 
         echo "Attaching to agent container $RUNNING_CONTAINER"
+
+        if interactive_tty; then
+            run_interactive docker exec \
+                "${IO_ARGS[@]}" \
+                --workdir /workspace \
+                "$RUNNING_CONTAINER" \
+                bash
+        fi
 
         exec docker exec \
             "${IO_ARGS[@]}" \
@@ -867,6 +946,13 @@ if [[ -n "$EXISTING_CONTAINER" ]]; then
             echo "Starting existing container..."
             docker start "$EXISTING_CONTAINER" >/dev/null
             echo "Attaching to existing container..."
+            if interactive_tty; then
+                run_interactive docker exec \
+                    "${IO_ARGS[@]}" \
+                    --workdir /workspace \
+                    "$EXISTING_CONTAINER" \
+                    bash
+            fi
             exec docker exec \
                 "${IO_ARGS[@]}" \
                 --workdir /workspace \
@@ -1051,14 +1137,14 @@ done
 # -----------------------------------------------------------------------------
 
 if (( ${#COMMAND[@]} > 0 )); then
-    exec docker run \
+    run_interactive docker run \
         "${RUN_ARGS[@]}" \
         "${PORT_ARGS[@]}" \
         "${DOCKER_ARGS[@]}" \
         "$IMAGE" \
         "${COMMAND[@]}"
 else
-    exec docker run \
+    run_interactive docker run \
         "${RUN_ARGS[@]}" \
         "${PORT_ARGS[@]}" \
         "${DOCKER_ARGS[@]}" \
