@@ -864,6 +864,8 @@ if [[ -n "$EXISTING_CONTAINER" ]]; then
             docker rm -f "$EXISTING_CONTAINER" >/dev/null
             ;;
         u|U)
+            echo "Starting existing container..."
+            docker start "$EXISTING_CONTAINER" >/dev/null
             echo "Attaching to existing container..."
             exec docker exec \
                 "${IO_ARGS[@]}" \

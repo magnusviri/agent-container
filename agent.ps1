@@ -602,6 +602,8 @@ try {
                     if ($LASTEXITCODE -ne 0) { throw "Unable to remove container $existingContainer." }
                 }
                 { $_ -match '^(?i:u)$' } {
+                    Write-Output 'Starting existing container...'
+                    & docker start $existingContainer | Out-Null
                     Write-Output 'Attaching to existing container...'
                     $execArguments = @('exec', '--interactive')
                     if (-not [Console]::IsInputRedirected -and -not [Console]::IsOutputRedirected) { $execArguments += '--tty' }
