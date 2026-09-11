@@ -104,8 +104,8 @@ Behavior:
       If a container is already running for the current directory, attach to it
       with an interactive Bash shell.
 
-      If no container is running but a stopped container exists, offer to start
-      it. When the last interactive terminal exits, the container is stopped.
+      If no container is running but a stopped container exists, start it.
+      When the last interactive terminal exits, the container is stopped.
 
       If no container exists, start a new container with Bash.
 
@@ -221,9 +221,9 @@ Options:
 
         -p 3000:3000
 
-      Docker fixes published ports when a container is created, so this option
-      only applies to a new container. When a container already exists for the
-      workspace, delete it first:
+      Docker fixes published ports when a container is created. For an existing
+      container, the requested mapping must already be configured. Otherwise,
+      delete the container first:
 
         agent delete
         agent -p 3000 [command...]
@@ -612,26 +612,99 @@ require_running_container() {
     printf '%s\n' "$container"
 }
 
-# Docker fixes published ports when a container is created, so -p can only take
-# effect on a 'docker run'. Reusing or attaching to an existing container has to
-# say so rather than silently dropping the request.
-requested_ports_summary() {
+# Docker fixes published ports when a container is created. Reusing or attaching
+# with -p is valid only when each requested mapping is already configured.
+missing_ports_summary() {
     local port
 
-    for port in "${EXTRA_PORTS[@]}"; do
+    for port in "${MISSING_PORTS[@]}"; do
         echo "  -p $port"
     done
 }
 
+requested_ports_are_configured() {
+    local container="$1"
+    local configured_bindings requested container_spec container_port protocol
+    local host_part host_port host_ip binding_container binding_ip binding_host
+    local host_ip_was_requested match port
+
+    # shellcheck disable=SC2016 # Docker, rather than Bash, expands this template.
+    configured_bindings="$(run_docker inspect --format \
+        '{{range $containerPort, $bindings := .HostConfig.PortBindings}}{{range $bindings}}{{$containerPort}}|{{.HostIp}}|{{.HostPort}}{{"\n"}}{{end}}{{end}}' \
+        "$container")"
+    MISSING_PORTS=()
+
+    for requested in "${EXTRA_PORTS[@]}"; do
+        container_spec="${requested##*:}"
+        if [[ "$container_spec" == */* ]]; then
+            container_port="${container_spec%/*}"
+            protocol="${container_spec##*/}"
+        else
+            container_port="$container_spec"
+            protocol="tcp"
+        fi
+
+        if [[ "$requested" == *:* ]]; then
+            host_part="${requested%:*}"
+            host_port="${host_part##*:}"
+            if [[ "$host_part" == *:* ]]; then
+                host_ip="${host_part%:*}"
+                host_ip_was_requested=1
+            else
+                host_ip=""
+                host_ip_was_requested=0
+            fi
+        else
+            host_port="${container_port}"
+            host_ip=""
+            host_ip_was_requested=0
+        fi
+
+        match=0
+        while IFS='|' read -r binding_container binding_ip binding_host; do
+            [[ "$binding_container" == "${container_port}/${protocol}" ]] || continue
+            [[ "$binding_host" == "$host_port" ]] || continue
+            if [[ "$host_ip_was_requested" == 1 \
+                && "$binding_ip" != "$host_ip" \
+                && ! ( "$host_ip" == "0.0.0.0" && -z "$binding_ip" ) ]]; then
+                continue
+            fi
+            match=1
+            break
+        done <<< "$configured_bindings"
+
+        if [[ "$match" == 0 ]]; then
+            MISSING_PORTS+=("$requested")
+        fi
+    done
+
+    [[ ${#MISSING_PORTS[@]} -eq 0 ]]
+}
+
 ports_require_new_container() {
-    echo "Published ports can only be configured when creating a container." >&2
-    echo "The existing container for this workspace does not publish:" >&2
-    requested_ports_summary >&2
+    echo "This container is already created, and its port configuration cannot be changed." >&2
+    echo "It does not publish:" >&2
+    missing_ports_summary >&2
     echo >&2
-    echo "Delete it, then relaunch with the port option:" >&2
+    echo "Delete the container and start over with the port option:" >&2
     echo "  agent delete" >&2
     echo "  agent -p PORT [command...]" >&2
     exit 1
+}
+
+print_published_ports() {
+    local container="$1"
+    local ports
+
+    ports="$(run_docker port "$container")"
+    echo "Published ports:"
+    if [[ -n "$ports" ]]; then
+        while IFS= read -r port; do
+            echo "  $port"
+        done <<< "$ports"
+    else
+        echo "  (none)"
+    fi
 }
 
 confirm_no_published_ports() {
@@ -971,7 +1044,8 @@ if [[ ${#COMMAND[@]} -eq 0 ]]; then
             credentials_require_new_container
         fi
 
-        if [[ ${#EXTRA_PORTS[@]} -gt 0 ]]; then
+        if [[ ${#EXTRA_PORTS[@]} -gt 0 ]] \
+            && ! requested_ports_are_configured "$RUNNING_CONTAINER"; then
             ports_require_new_container
         fi
 
@@ -1017,12 +1091,9 @@ if [[ -n "$RUNNING_CONTAINER" ]]; then
     echo
 
     if [[ ${#EXTRA_PORTS[@]} -gt 0 ]]; then
-        echo "It does not publish the requested ports:"
-        requested_ports_summary
-        echo
-        echo "Docker fixes published ports when a container is created, so they"
-        echo "require deleting this container and starting a new one."
-        echo
+        if ! requested_ports_are_configured "$RUNNING_CONTAINER"; then
+            ports_require_new_container
+        fi
     fi
 
     echo "Use one of:"
@@ -1092,77 +1163,36 @@ fi
 EXISTING_CONTAINER="$(find_existing_container)"
 
 if [[ -n "$EXISTING_CONTAINER" ]]; then
-    if [[ ! -t 0 ]]; then
-        echo "An existing agent container was found for this workspace:" >&2
-        echo "  $WORKSPACE" >&2
-        echo "  $EXISTING_CONTAINER" >&2
-        echo >&2
-        echo "Run interactively to choose whether to reuse or delete it," >&2
-        echo "or run 'agent delete' first." >&2
-        exit 1
+    if [[ "$CREDENTIALS_REQUESTED" == 1 ]]; then
+        credentials_require_new_container
     fi
 
-    echo "An existing agent container was found for this workspace:"
-    echo "  $WORKSPACE"
-    echo
-    echo "Container:"
-    echo "  $EXISTING_CONTAINER"
-    echo
-
-    if [[ ${#EXTRA_PORTS[@]} -gt 0 ]]; then
-        echo "Reusing it cannot publish the requested ports:"
-        requested_ports_summary
-        echo
-        echo "Docker fixes published ports when a container is created."
-        echo "Delete it to create a container that publishes them."
-        echo
+    if [[ ${#EXTRA_PORTS[@]} -gt 0 ]] \
+        && ! requested_ports_are_configured "$EXISTING_CONTAINER"; then
+        ports_require_new_container
     fi
 
-    if ! read -r -p "Do you want to use the existing container y/n/delete? " response; then
-        echo >&2
-        exit 1
+    echo "Starting existing container $EXISTING_CONTAINER..."
+    run_docker start "$EXISTING_CONTAINER" >/dev/null
+    print_published_ports "$EXISTING_CONTAINER"
+    echo "Attaching to existing container..."
+    if interactive_tty; then
+        run_interactive run_docker exec \
+            "${IO_ARGS[@]}" \
+            --user agent \
+            --env HOME=/home/agent \
+            --workdir /workspace \
+            "$EXISTING_CONTAINER" \
+            bash
+        exit $?
     fi
-
-    case "$response" in
-        delete)
-            echo "Deleting existing container..."
-            run_docker rm -f "$EXISTING_CONTAINER" >/dev/null
-            ;;
-        y|Y|yes|Yes|YES)
-            if [[ ${#EXTRA_PORTS[@]} -gt 0 ]]; then
-                echo "Reusing the existing container; requested ports are not published."
-            fi
-
-            echo "Starting existing container..."
-            run_docker start "$EXISTING_CONTAINER" >/dev/null
-            echo "Attaching to existing container..."
-            if interactive_tty; then
-                run_interactive run_docker exec \
-                    "${IO_ARGS[@]}" \
-                    --user agent \
-                    --env HOME=/home/agent \
-                    --workdir /workspace \
-                    "$EXISTING_CONTAINER" \
-                    bash
-                exit $?
-            fi
-            exec_docker exec \
-                "${IO_ARGS[@]}" \
-                --user agent \
-                --env HOME=/home/agent \
-                --workdir /workspace \
-                "$EXISTING_CONTAINER" \
-                bash
-            ;;
-        n|N|no|No|NO)
-            echo "Cancelled."
-            exit 1
-            ;;
-        *)
-            echo "Cancelled."
-            exit 1
-            ;;
-    esac
+    exec_docker exec \
+        "${IO_ARGS[@]}" \
+        --user agent \
+        --env HOME=/home/agent \
+        --workdir /workspace \
+        "$EXISTING_CONTAINER" \
+        bash
 fi
 
 # -----------------------------------------------------------------------------
@@ -1312,6 +1342,7 @@ log_verbose "image:          $IMAGE"
 log_verbose "requested ports: ${EXTRA_PORTS[*]:-none}"
 
 PORT_ARGS=()
+echo "Published ports:"
 
 if [[ "$PUBLISH_SSH" == 1 ]]; then
     RESOLVED_SSH_HOST_PORT="$(find_available_ssh_port)"
@@ -1320,7 +1351,7 @@ if [[ "$PUBLISH_SSH" == 1 ]]; then
         --publish "127.0.0.1:${RESOLVED_SSH_HOST_PORT}:22"
     )
 
-    echo "SSH:   localhost:${RESOLVED_SSH_HOST_PORT} -> container:22"
+    echo "  SSH:   localhost:${RESOLVED_SSH_HOST_PORT} -> container:22"
 fi
 
 if [[ "$PUBLISH_CODEX" == 1 ]]; then
@@ -1328,7 +1359,7 @@ if [[ "$PUBLISH_CODEX" == 1 ]]; then
         --publish "127.0.0.1:${CODEX_HOST_PORT}:1455"
     )
 
-    echo "Codex: localhost:${CODEX_HOST_PORT} -> container:1455"
+    echo "  Codex: localhost:${CODEX_HOST_PORT} -> container:1455"
 fi
 
 for port in "${EXTRA_PORTS[@]}"; do
@@ -1340,8 +1371,12 @@ for port in "${EXTRA_PORTS[@]}"; do
         --publish "$port"
     )
 
-    echo "Port:  ${port%:*} -> container:${port##*:}"
+    echo "  Port:  ${port%:*} -> container:${port##*:}"
 done
+
+if [[ ${#PORT_ARGS[@]} -eq 0 ]]; then
+    echo "  (none)"
+fi
 
 # -----------------------------------------------------------------------------
 # Launch

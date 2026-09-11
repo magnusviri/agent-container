@@ -21,8 +21,8 @@ Behavior:
       If a container is already running for the current directory, attach to
       it with an interactive shell.
 
-      If no container is running but a stopped container exists, offer to start
-      it. When the last interactive terminal exits, the container is stopped.
+      If no container is running but a stopped container exists, start it.
+      When the last interactive terminal exits, the container is stopped.
 
       If no container exists, start a new container with a shell.
 
@@ -138,9 +138,9 @@ Options:
 
         -p 3000:3000
 
-      Docker fixes published ports when a container is created, so this option
-      only applies to a new container. When a container already exists for the
-      workspace, delete it first:
+      Docker fixes published ports when a container is created. For an existing
+      container, the requested mapping must already be configured. Otherwise,
+      delete the container first:
 
         agent delete
         agent -p 3000 [command...]
@@ -307,13 +307,75 @@ function Write-VerboseNote {
     [Console]::Error.WriteLine("# $Message")
 }
 
-# Docker fixes published ports when a container is created, so -p can only take
-# effect on a 'docker run'. Reusing or attaching to an existing container has to
-# say so rather than silently dropping the request.
+# Docker fixes published ports when a container is created. Reusing or attaching
+# with -p is valid only when each requested mapping is already configured.
 function Get-RequestedPortSummary {
     param([string[]] $Ports)
 
     return (($Ports | ForEach-Object { "  -p $_" }) -join "`n")
+}
+
+function Test-RequestedPortsConfigured {
+    param(
+        [string] $Container,
+        [string[]] $Ports
+    )
+
+    Write-CommandLog @('inspect', '--format', '{{json .HostConfig.PortBindings}}', $Container)
+    $json = & docker inspect --format '{{json .HostConfig.PortBindings}}' $Container
+    if ($LASTEXITCODE -ne 0) { throw "Unable to inspect container $Container." }
+    $bindings = $json | ConvertFrom-Json
+    $script:MissingPorts = [System.Collections.Generic.List[string]]::new()
+
+    foreach ($requested in $Ports) {
+        $parts = @($requested -split ':')
+        $containerSpec = $parts[-1]
+        $containerParts = @($containerSpec -split '/', 2)
+        $containerPort = $containerParts[0]
+        $protocol = if ($containerParts.Count -gt 1) { $containerParts[1] } else { 'tcp' }
+
+        if ($parts.Count -eq 1) {
+            $hostPort = $containerPort
+            $hostIp = $null
+        } else {
+            $hostPort = $parts[-2]
+            $hostIp = if ($parts.Count -gt 2) { ($parts[0..($parts.Count - 3)] -join ':') } else { $null }
+        }
+
+        $property = $bindings.PSObject.Properties | Where-Object Name -CEQ "${containerPort}/${protocol}"
+        $matched = $false
+        if ($property) {
+            foreach ($binding in @($property.Value)) {
+                $ipMatches = $null -eq $hostIp -or $binding.HostIp -ceq $hostIp -or
+                    ($hostIp -eq '0.0.0.0' -and -not $binding.HostIp)
+                if ($binding.HostPort -ceq $hostPort -and $ipMatches) {
+                    $matched = $true
+                    break
+                }
+            }
+        }
+        if (-not $matched) { $script:MissingPorts.Add($requested) }
+    }
+
+    return -not $script:MissingPorts.Count
+}
+
+function Throw-PortsRequireNewContainer {
+    throw "This container is already created, and its port configuration cannot be changed.`nIt does not publish:`n$(Get-RequestedPortSummary $script:MissingPorts)`n`nDelete the container and start over with the port option:`n  agent delete`n  agent -p PORT [command...]"
+}
+
+function Write-PublishedPorts {
+    param([string] $Container)
+
+    Write-CommandLog @('port', $Container)
+    $ports = @(& docker port $Container)
+    if ($LASTEXITCODE -ne 0) { throw "Unable to query published ports for container $Container." }
+    Write-Output 'Published ports:'
+    if ($ports.Count) {
+        $ports | ForEach-Object { Write-Output "  $_" }
+    } else {
+        Write-Output '  (none)'
+    }
 }
 
 function Confirm-NoPublishedPorts {
@@ -332,7 +394,8 @@ function Assert-DockerAvailable {
 function Get-MatchingContainer {
     param([switch] $IncludeStopped)
 
-    $dockerArguments = if ($IncludeStopped) { @('ps', '-a') } else { @('ps') }
+    $dockerArguments = @('ps')
+    if ($IncludeStopped) { $dockerArguments += '-a' }
     $dockerArguments += @(
         '--filter', 'label=agent-container=true',
         '--filter', "label=agent-workspace=$script:WorkspaceId",
@@ -710,8 +773,8 @@ try {
     $runningContainer = Get-MatchingContainer
     if (-not $Command.Count -and $runningContainer) {
         if ($CredentialsRequested) { throw 'Credential mounts require a new container. Run agent stop first.' }
-        if ($ExtraPorts.Count) {
-            throw "Published ports can only be configured when creating a container.`nThe existing container for this workspace does not publish:`n$(Get-RequestedPortSummary $ExtraPorts)`n`nDelete it, then relaunch with the port option:`n  agent delete`n  agent -p PORT [command...]"
+        if ($ExtraPorts.Count -and -not (Test-RequestedPortsConfigured $runningContainer $ExtraPorts)) {
+            Throw-PortsRequireNewContainer
         }
         Write-Output "Attaching to agent container $runningContainer"
         $execArguments = @('exec', '--interactive')
@@ -723,13 +786,13 @@ try {
         }
         Invoke-Docker $execArguments
     }
-        if ($runningContainer) {
-        $portNote = if ($ExtraPorts.Count) {
-            "It does not publish the requested ports:`n$(Get-RequestedPortSummary $ExtraPorts)`n`nDocker fixes published ports when a container is created, so they`nrequire deleting this container and starting a new one.`n`n"
-        } else { '' }
-        throw "An agent container is already running for this workspace:`n  $script:Workspace`n`nContainer:`n  $runningContainer`n`n${portNote}Use one of:`n  agent`n  agent exec <command>`n  agent root [command]`n  agent stop`n  agent delete"
-    }
 
+    if ($runningContainer) {
+        if ($ExtraPorts.Count -and -not (Test-RequestedPortsConfigured $runningContainer $ExtraPorts)) {
+            Throw-PortsRequireNewContainer
+        }
+        throw "An agent container is already running for this workspace:`n  $script:Workspace`n`nContainer:`n  $runningContainer`n`nUse one of:`n  agent`n  agent exec <command>`n  agent root [command]`n  agent stop`n  agent delete"
+    }
 
     Assert-AgentImage
 
@@ -760,58 +823,24 @@ try {
 
     $existingContainer = Get-MatchingContainer -IncludeStopped
     if ($existingContainer) {
-        if ([Console]::IsInputRedirected) {
-            Write-CommandLog @('rm', '-f', $existingContainer)
-            & docker rm -f $existingContainer | Out-Null
-        } else {
-            $response = $null
-            Write-Output "An existing agent container was found for this workspace:"
-            Write-Output "  $script:Workspace"
-            Write-Output ''
-            Write-Output "Container:"
-            Write-Output "  $existingContainer"
-            Write-Output ''
-            if ($ExtraPorts.Count) {
-                Write-Output 'Reusing it cannot publish the requested ports:'
-                Write-Output (Get-RequestedPortSummary $ExtraPorts)
-                Write-Output ''
-                Write-Output 'Docker fixes published ports when a container is created.'
-                Write-Output 'Delete it to create a container that publishes them.'
-                Write-Output ''
-            }
-            $prompt = Read-Host 'Do you want to use the existing container y/n/delete?'
-            switch ($prompt) {
-                { $_ -ceq 'delete' } {
-                    Write-Output 'Deleting existing container...'
-                    Write-CommandLog @('rm', '-f', $existingContainer)
-                    & docker rm -f $existingContainer | Out-Null
-                    if ($LASTEXITCODE -ne 0) { throw "Unable to remove container $existingContainer." }
-                }
-                { $_ -match '^(?i:y|yes)$' } {
-                    if ($ExtraPorts.Count) {
-                        Write-Output 'Reusing the existing container; requested ports are not published.'
-                    }
-                    Write-Output 'Starting existing container...'
-                    Write-CommandLog @('start', $existingContainer)
-                    & docker start $existingContainer | Out-Null
-                    Write-Output 'Attaching to existing container...'
-                    $execArguments = @('exec', '--interactive')
-                    $interactive = -not [Console]::IsInputRedirected -and -not [Console]::IsOutputRedirected
-                    if ($interactive) { $execArguments += '--tty' }
-                    $execArguments += @('--user', 'agent', '--env', 'HOME=/home/agent', '--workdir', '/workspace', $existingContainer, 'bash')
-                    if ($interactive) {
-                        Invoke-InteractiveDocker $ContainerName $execArguments
-                    }
-                    Invoke-Docker $execArguments
-                }
-                { $_ -match '^(?i:n|no)$' } {
-                    throw 'Cancelled.'
-                }
-                default {
-                    throw 'Cancelled.'
-                }
-            }
+        if ($CredentialsRequested) { throw 'Credential mounts require a new container. Run agent delete first.' }
+        if ($ExtraPorts.Count -and -not (Test-RequestedPortsConfigured $existingContainer $ExtraPorts)) {
+            Throw-PortsRequireNewContainer
         }
+        Write-Output "Starting existing container $existingContainer..."
+        Write-CommandLog @('start', $existingContainer)
+        & docker start $existingContainer | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "Unable to start container $existingContainer." }
+        Write-PublishedPorts $existingContainer
+        Write-Output 'Attaching to existing container...'
+        $execArguments = @('exec', '--interactive')
+        $interactive = -not [Console]::IsInputRedirected -and -not [Console]::IsOutputRedirected
+        if ($interactive) { $execArguments += '--tty' }
+        $execArguments += @('--user', 'agent', '--env', 'HOME=/home/agent', '--workdir', '/workspace', $existingContainer, 'bash')
+        if ($interactive) {
+            Invoke-InteractiveDocker $ContainerName $execArguments
+        }
+        Invoke-Docker $execArguments
     }
 
     $PublishSsh = $false
@@ -919,22 +948,28 @@ try {
     Write-VerboseNote "image:          $script:Image"
     Write-VerboseNote "requested ports: $(if ($ExtraPorts.Count) { $ExtraPorts -join ' ' } else { 'none' })"
 
+    Write-Output 'Published ports:'
+    $publishedPortCount = 0
     if ($PublishSsh) {
         $resolvedSshPort = Get-SshPort
         @('--publish', "127.0.0.1:${resolvedSshPort}:22") | ForEach-Object { $runArguments.Add($_) }
-        Write-Output "SSH:   localhost:$resolvedSshPort -> container:22"
+        Write-Output "  SSH:   localhost:$resolvedSshPort -> container:22"
+        $publishedPortCount++
     }
     if ($PublishCodex) {
         @('--publish', "127.0.0.1:${CodexHostPort}:1455") | ForEach-Object { $runArguments.Add($_) }
-        Write-Output "Codex: localhost:$CodexHostPort -> container:1455"
+        Write-Output "  Codex: localhost:$CodexHostPort -> container:1455"
+        $publishedPortCount++
     }
     foreach ($port in $ExtraPorts) {
         if ($port -notmatch ':') { $port = "${port}:${port}" }
         @('--publish', $port) | ForEach-Object { $runArguments.Add($_) }
         $containerPort = $port.Substring($port.LastIndexOf(':') + 1)
         $hostPort = $port.Substring(0, $port.LastIndexOf(':'))
-        Write-Output "Port:  $hostPort -> container:$containerPort"
+        Write-Output "  Port:  $hostPort -> container:$containerPort"
+        $publishedPortCount++
     }
+    if (-not $publishedPortCount) { Write-Output '  (none)' }
     $DockerRunArguments | ForEach-Object { $runArguments.Add($_) }
     $runArguments.Add($script:Image)
     $Command | ForEach-Object { $runArguments.Add($_) }

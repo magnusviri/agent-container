@@ -330,9 +330,9 @@ If a container is already running for that project, it attaches to the running c
 docker exec -it --user agent --env HOME=/home/agent <container-id> bash
 ```
 
-If a stopped container exists for the project, it is started instead of creating a
-new one. The container stays up while interactive terminals are attached and is
-stopped once the last interactive terminal exits.
+If a stopped container exists for the project, it is started automatically
+instead of creating a new one. The container stays up while interactive
+terminals are attached and is stopped once the last interactive terminal exits.
 
 This makes it easy to open multiple terminals into the same agent environment.
 
@@ -697,12 +697,12 @@ Binding development ports to `127.0.0.1` is recommended when they do not need
 to be reachable from other machines. Without an explicit bind address, Docker
 publishes the port on all host interfaces by default.
 
-### Ports only apply to new containers
+### Ports are fixed at container creation
 
-Docker fixes published ports when a container is created, so `-p` is only
-honored by the `docker run` that creates the workspace container. Reusing or
-attaching to an existing container cannot add a port mapping, and Docker
-Desktop will show no ports for that container.
+Docker fixes published ports when a container is created. When `-p` is used for
+an existing workspace container, the launcher starts or attaches to it only if
+that mapping is already part of the container configuration. Otherwise it exits
+and explains that the container must be deleted and recreated.
 
 The launcher reports this instead of silently dropping the request. When a
 container already exists for the workspace, delete it and start a new one:
@@ -712,10 +712,12 @@ agent delete
 agent -p 3000 claude
 ```
 
-Each published port is echoed when the container is created:
+Published ports are printed whenever a container is started, including when an
+existing stopped container is restarted:
 
 ```text
-Port:  3000 -> container:3000
+Published ports:
+  Port:  3000 -> container:3000
 ```
 
 ## Opt-in SSH and GitHub credentials
