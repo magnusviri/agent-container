@@ -145,6 +145,9 @@ Options:
         agent delete
         agent -p 3000 [command...]
 
+      When a new container would have no published ports, the launcher asks
+      for confirmation because ports cannot be added later.
+
   --ssh-port PORT
       Host port to map to container SSH port 22.
 
@@ -311,6 +314,13 @@ function Get-RequestedPortSummary {
     param([string[]] $Ports)
 
     return (($Ports | ForEach-Object { "  -p $_" }) -join "`n")
+}
+
+function Confirm-NoPublishedPorts {
+    $response = Read-Host "Are you sure you don't want to publish any ports? Once created, ports cannot be added later. [y/N]"
+    if ($response -notmatch '^(?i:y|yes)$') {
+        throw 'Cancelled.'
+    }
 }
 
 function Assert-DockerAvailable {
@@ -769,15 +779,15 @@ try {
                 Write-Output 'Delete it to create a container that publishes them.'
                 Write-Output ''
             }
-            $prompt = Read-Host 'Use existing container, delete it, or cancel? [u/d/C]'
+            $prompt = Read-Host 'Do you want to use the existing container y/n/delete?'
             switch ($prompt) {
-                { $_ -match '^(?i:d)$' } {
+                { $_ -ceq 'delete' } {
                     Write-Output 'Deleting existing container...'
                     Write-CommandLog @('rm', '-f', $existingContainer)
                     & docker rm -f $existingContainer | Out-Null
                     if ($LASTEXITCODE -ne 0) { throw "Unable to remove container $existingContainer." }
                 }
-                { $_ -match '^(?i:u)$' } {
+                { $_ -match '^(?i:y|yes)$' } {
                     if ($ExtraPorts.Count) {
                         Write-Output 'Reusing the existing container; requested ports are not published.'
                     }
@@ -793,6 +803,9 @@ try {
                         Invoke-InteractiveDocker $ContainerName $execArguments
                     }
                     Invoke-Docker $execArguments
+                }
+                { $_ -match '^(?i:n|no)$' } {
+                    throw 'Cancelled.'
                 }
                 default {
                     throw 'Cancelled.'
@@ -820,6 +833,10 @@ try {
             @('codex', '--sandbox', 'danger-full-access') + $remainingCommand | ForEach-Object { $Command.Add($_) }
         }
         if ($CodexAuthEnabled) { $PublishSsh = $true; $PublishCodex = $true }
+    }
+
+    if (-not $ExtraPorts.Count -and -not $PublishSsh -and -not $PublishCodex) {
+        Confirm-NoPublishedPorts
     }
 
     if ($Command.Count -and $Command[0] -eq 'claude') {

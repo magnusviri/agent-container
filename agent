@@ -228,6 +228,9 @@ Options:
         agent delete
         agent -p 3000 [command...]
 
+      When a new container would have no published ports, the launcher asks
+      for confirmation because ports cannot be added later.
+
   --ssh-port PORT
       Host port to map to container SSH port 22.
 
@@ -629,6 +632,24 @@ ports_require_new_container() {
     echo "  agent delete" >&2
     echo "  agent -p PORT [command...]" >&2
     exit 1
+}
+
+confirm_no_published_ports() {
+    local response
+
+    if ! read -r -p "Are you sure you don't want to publish any ports? Once created, ports cannot be added later. [y/N] " response; then
+        echo >&2
+        exit 1
+    fi
+
+    case "$response" in
+        y|Y|yes|Yes|YES)
+            ;;
+        *)
+            echo "Cancelled."
+            exit 1
+            ;;
+    esac
 }
 
 credentials_require_new_container() {
@@ -1179,6 +1200,10 @@ if [[ ${#COMMAND[@]} -gt 0 && "${COMMAND[0]}" == "codex" ]]; then
 else
     PUBLISH_SSH=0
     PUBLISH_CODEX=0
+fi
+
+if [[ ${#EXTRA_PORTS[@]} -eq 0 && "$PUBLISH_SSH" == 0 && "$PUBLISH_CODEX" == 0 ]]; then
+    confirm_no_published_ports
 fi
 
 # -----------------------------------------------------------------------------

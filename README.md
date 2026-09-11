@@ -610,6 +610,8 @@ The included `.gitignore` uses these rules:
 ## Ports
 
 No ports are published by default for a normal shell, Claude Code, or OpenCode.
+When creating a container without any published ports, the launcher asks for
+confirmation because ports cannot be added after the container is created.
 
 For example:
 
