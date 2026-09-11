@@ -1097,17 +1097,17 @@ if [[ -n "$EXISTING_CONTAINER" ]]; then
         echo
     fi
 
-    if ! read -r -p "Use existing container, delete it, or cancel? [u/d/C] " response; then
+    if ! read -r -p "Do you want to use the existing container y/n/delete? " response; then
         echo >&2
         exit 1
     fi
 
     case "$response" in
-        d|D)
+        delete)
             echo "Deleting existing container..."
             run_docker rm -f "$EXISTING_CONTAINER" >/dev/null
             ;;
-        u|U)
+        y|Y|yes|Yes|YES)
             if [[ ${#EXTRA_PORTS[@]} -gt 0 ]]; then
                 echo "Reusing the existing container; requested ports are not published."
             fi
@@ -1132,6 +1132,10 @@ if [[ -n "$EXISTING_CONTAINER" ]]; then
                 --workdir /workspace \
                 "$EXISTING_CONTAINER" \
                 bash
+            ;;
+        n|N|no|No|NO)
+            echo "Cancelled."
+            exit 1
             ;;
         *)
             echo "Cancelled."

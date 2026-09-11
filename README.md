@@ -11,6 +11,7 @@ It provides a consistent toolchain for:
 * Ruby
 * Bundler
 * Node.js / npm
+* PowerShell
 * Git
 * GitHub CLI
 * Ansible
@@ -45,6 +46,7 @@ Python (managed by mise)
 Ruby / Bundler (managed by mise)
 Node.js / npm (managed by mise)
 uv
+PowerShell
 
 Claude Code
 OpenAI Codex
