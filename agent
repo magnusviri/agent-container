@@ -45,9 +45,42 @@ fi
 PUBLISH_SSH=0
 PUBLISH_CODEX=0
 CODEX_AUTH_ENABLED=1
+VERBOSE="${AI_AGENT_VERBOSE:-0}"
 CREDENTIALS_DIR=""
 CREDENTIALS_READ_ONLY=0
 CREDENTIALS_REQUESTED=0
+
+# -----------------------------------------------------------------------------
+# Verbose logging
+# -----------------------------------------------------------------------------
+
+# Echo a command to stderr, quoted so it can be copied and rerun as-is.
+log_command() {
+    [[ "$VERBOSE" == 1 ]] || return 0
+
+    {
+        printf '+'
+        printf ' %q' "$@"
+        printf '\n'
+    } >&2
+}
+
+# Log an explanatory note about what the launcher is doing or skipping.
+log_verbose() {
+    [[ "$VERBOSE" == 1 ]] || return 0
+
+    printf '# %s\n' "$*" >&2
+}
+
+run_docker() {
+    log_command docker "$@"
+    docker "$@"
+}
+
+exec_docker() {
+    log_command docker "$@"
+    exec docker "$@"
+}
 
 # -----------------------------------------------------------------------------
 # Help
@@ -174,6 +207,13 @@ Options:
 
         -p 3000:3000
 
+      Docker fixes published ports when a container is created, so this option
+      only applies to a new container. When a container already exists for the
+      workspace, delete it first:
+
+        agent delete
+        agent -p 3000 [command...]
+
   --ssh-port PORT
       Host port to map to container SSH port 22.
 
@@ -221,6 +261,12 @@ Options:
           --docker-arg --privileged \
           codex
 
+  -v, --verbose
+      Print every docker command the launcher runs, quoted so it can be copied
+      and rerun as-is, plus notes about launcher decisions.
+
+      Output goes to stderr.
+
   -h, --help
       Show this help.
 
@@ -247,6 +293,9 @@ Environment:
 
       Default:
         1455
+
+  AI_AGENT_VERBOSE
+      Set to 1 to enable verbose command logging without passing --verbose.
 
 Persistent state:
   The following directories are mounted into every agent container:
@@ -282,6 +331,8 @@ Examples:
   agent -p 3000 codex
 
   agent -p 3000 -p 5173 claude
+
+  agent --verbose -p 3000 claude
 
   agent --ssh-port 2222 codex
 
@@ -395,7 +446,7 @@ find_available_ssh_port() {
 }
 
 find_running_container() {
-    docker ps \
+    run_docker ps \
         --filter "label=agent-container=true" \
         --filter "label=agent-workspace=${WORKSPACE_ID}" \
         --format '{{.ID}}' \
@@ -403,7 +454,7 @@ find_running_container() {
 }
 
 find_existing_container() {
-    docker ps -a \
+    run_docker ps -a \
         --filter "label=agent-container=true" \
         --filter "label=agent-workspace=${WORKSPACE_ID}" \
         --format '{{.ID}}' \
@@ -456,7 +507,7 @@ end_session() {
     [[ -n "$running" ]] || return 0
 
     echo "Stopping agent container $running"
-    docker stop "$running" >/dev/null 2>&1 || true
+    run_docker stop "$running" >/dev/null 2>&1 || true
 }
 
 run_interactive() {
@@ -490,7 +541,7 @@ build_image() {
         done < "$env_file"
     fi
 
-    docker build \
+    run_docker build \
         "${build_args[@]}" \
         "${docker_build_args[@]}" \
         --tag "$IMAGE" \
@@ -500,7 +551,7 @@ build_image() {
 ensure_image_exists() {
     local response
 
-    if docker image inspect "$IMAGE" >/dev/null 2>&1; then
+    if run_docker image inspect "$IMAGE" >/dev/null 2>&1; then
         return
     fi
 
@@ -538,6 +589,28 @@ require_running_container() {
     fi
 
     printf '%s\n' "$container"
+}
+
+# Docker fixes published ports when a container is created, so -p can only take
+# effect on a 'docker run'. Reusing or attaching to an existing container has to
+# say so rather than silently dropping the request.
+requested_ports_summary() {
+    local port
+
+    for port in "${EXTRA_PORTS[@]}"; do
+        echo "  -p $port"
+    done
+}
+
+ports_require_new_container() {
+    echo "Published ports can only be configured when creating a container." >&2
+    echo "The existing container for this workspace does not publish:" >&2
+    requested_ports_summary >&2
+    echo >&2
+    echo "Delete it, then relaunch with the port option:" >&2
+    echo "  agent delete" >&2
+    echo "  agent -p PORT [command...]" >&2
+    exit 1
 }
 
 credentials_require_new_container() {
@@ -587,6 +660,11 @@ while [[ $# -gt 0 ]]; do
 
         --no-codex-auth)
             CODEX_AUTH_ENABLED=0
+            shift
+            ;;
+
+        -v|--verbose)
+            VERBOSE=1
             shift
             ;;
 
@@ -694,14 +772,14 @@ if [[ ${#COMMAND[@]} -gt 0 ]]; then
             while read -r container; do
                 [[ -n "$container" ]] || continue
 
-                CODEX_SSH_PORT="$(docker inspect \
+                CODEX_SSH_PORT="$(run_docker inspect \
                     --format '{{with index .NetworkSettings.Ports "22/tcp"}}{{(index . 0).HostPort}}{{end}}' \
                     "$container")"
 
                 if [[ -n "$CODEX_SSH_PORT" ]]; then
                     break
                 fi
-            done < <(docker ps \
+            done < <(run_docker ps \
                 --filter "label=agent-container=true" \
                 --filter "publish=1455" \
                 --format '{{.ID}}')
@@ -723,21 +801,21 @@ if [[ ${#COMMAND[@]} -gt 0 ]]; then
 
             if [[ ${#COMMAND[@]} -eq 1 ]]; then
                 if interactive_tty; then
-                    run_interactive docker exec \
+                    run_interactive run_docker exec \
                         "${IO_ARGS[@]}" \
                         --workdir /workspace \
                         "$container" \
                         bash
                 fi
 
-                exec docker exec \
+                exec_docker exec \
                     "${IO_ARGS[@]}" \
                     --workdir /workspace \
                     "$container" \
                     bash
             fi
 
-            exec docker exec \
+            exec_docker exec \
                 "${IO_ARGS[@]}" \
                 --workdir /workspace \
                 "$container" \
@@ -754,7 +832,7 @@ if [[ ${#COMMAND[@]} -gt 0 ]]; then
             fi
 
             echo "Stopping agent container $container"
-            docker stop "$container"
+            run_docker stop "$container"
             exit 0
             ;;
 
@@ -768,7 +846,7 @@ if [[ ${#COMMAND[@]} -gt 0 ]]; then
             fi
 
             echo "Deleting agent container $container"
-            docker rm -f "$container" >/dev/null
+            run_docker rm -f "$container" >/dev/null
             exit 0
             ;;
 
@@ -782,7 +860,7 @@ if [[ ${#COMMAND[@]} -gt 0 ]]; then
             fi
 
             echo "Agent container is running:"
-            docker ps \
+            run_docker ps \
                 --filter "id=$container" \
                 --format '  ID:       {{.ID}}
   Name:     {{.Names}}
@@ -794,7 +872,7 @@ if [[ ${#COMMAND[@]} -gt 0 ]]; then
             ;;
 
         list|ls)
-            docker ps \
+            run_docker ps \
                 --filter "label=agent-container=true" \
                 --format 'ID: {{.ID}}	Name: {{.Names}}	Image: {{.Image}}	Status: {{.Status}}	Ports: {{.Ports}}	PWD: {{.Label "agent-workspace-path"}}'
             exit 0
@@ -814,17 +892,21 @@ if [[ ${#COMMAND[@]} -eq 0 ]]; then
             credentials_require_new_container
         fi
 
+        if [[ ${#EXTRA_PORTS[@]} -gt 0 ]]; then
+            ports_require_new_container
+        fi
+
         echo "Attaching to agent container $RUNNING_CONTAINER"
 
         if interactive_tty; then
-            run_interactive docker exec \
+            run_interactive run_docker exec \
                 "${IO_ARGS[@]}" \
                 --workdir /workspace \
                 "$RUNNING_CONTAINER" \
                 bash
         fi
 
-        exec docker exec \
+        exec_docker exec \
             "${IO_ARGS[@]}" \
             --workdir /workspace \
             "$RUNNING_CONTAINER" \
@@ -849,6 +931,16 @@ if [[ -n "$RUNNING_CONTAINER" ]]; then
     echo "Container:"
     echo "  $RUNNING_CONTAINER"
     echo
+
+    if [[ ${#EXTRA_PORTS[@]} -gt 0 ]]; then
+        echo "It does not publish the requested ports:"
+        requested_ports_summary
+        echo
+        echo "Docker fixes published ports when a container is created, so they"
+        echo "require deleting this container and starting a new one."
+        echo
+    fi
+
     echo "Use one of:"
     echo "  agent"
     echo "  agent exec <command>"
@@ -932,6 +1024,15 @@ if [[ -n "$EXISTING_CONTAINER" ]]; then
     echo "  $EXISTING_CONTAINER"
     echo
 
+    if [[ ${#EXTRA_PORTS[@]} -gt 0 ]]; then
+        echo "Reusing it cannot publish the requested ports:"
+        requested_ports_summary
+        echo
+        echo "Docker fixes published ports when a container is created."
+        echo "Delete it to create a container that publishes them."
+        echo
+    fi
+
     if ! read -r -p "Use existing container, delete it, or cancel? [u/d/C] " response; then
         echo >&2
         exit 1
@@ -940,20 +1041,24 @@ if [[ -n "$EXISTING_CONTAINER" ]]; then
     case "$response" in
         d|D)
             echo "Deleting existing container..."
-            docker rm -f "$EXISTING_CONTAINER" >/dev/null
+            run_docker rm -f "$EXISTING_CONTAINER" >/dev/null
             ;;
         u|U)
+            if [[ ${#EXTRA_PORTS[@]} -gt 0 ]]; then
+                echo "Reusing the existing container; requested ports are not published."
+            fi
+
             echo "Starting existing container..."
-            docker start "$EXISTING_CONTAINER" >/dev/null
+            run_docker start "$EXISTING_CONTAINER" >/dev/null
             echo "Attaching to existing container..."
             if interactive_tty; then
-                run_interactive docker exec \
+                run_interactive run_docker exec \
                     "${IO_ARGS[@]}" \
                     --workdir /workspace \
                     "$EXISTING_CONTAINER" \
                     bash
             fi
-            exec docker exec \
+            exec_docker exec \
                 "${IO_ARGS[@]}" \
                 --workdir /workspace \
                 "$EXISTING_CONTAINER" \
@@ -1102,6 +1207,12 @@ fi
 # Ports
 # -----------------------------------------------------------------------------
 
+log_verbose "workspace:      $WORKSPACE"
+log_verbose "workspace id:   $WORKSPACE_ID"
+log_verbose "container name: $CONTAINER_NAME"
+log_verbose "image:          $IMAGE"
+log_verbose "requested ports: ${EXTRA_PORTS[*]:-none}"
+
 PORT_ARGS=()
 
 if [[ "$PUBLISH_SSH" == 1 ]]; then
@@ -1130,6 +1241,8 @@ for port in "${EXTRA_PORTS[@]}"; do
     PORT_ARGS+=(
         --publish "$port"
     )
+
+    echo "Port:  ${port%:*} -> container:${port##*:}"
 done
 
 # -----------------------------------------------------------------------------
@@ -1137,14 +1250,14 @@ done
 # -----------------------------------------------------------------------------
 
 if (( ${#COMMAND[@]} > 0 )); then
-    run_interactive docker run \
+    run_interactive run_docker run \
         "${RUN_ARGS[@]}" \
         "${PORT_ARGS[@]}" \
         "${DOCKER_ARGS[@]}" \
         "$IMAGE" \
         "${COMMAND[@]}"
 else
-    run_interactive docker run \
+    run_interactive run_docker run \
         "${RUN_ARGS[@]}" \
         "${PORT_ARGS[@]}" \
         "${DOCKER_ARGS[@]}" \

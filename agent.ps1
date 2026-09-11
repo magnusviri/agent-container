@@ -124,6 +124,13 @@ Options:
 
         -p 3000:3000
 
+      Docker fixes published ports when a container is created, so this option
+      only applies to a new container. When a container already exists for the
+      workspace, delete it first:
+
+        agent delete
+        agent -p 3000 [command...]
+
   --ssh-port PORT
       Host port to map to container SSH port 22.
 
@@ -169,6 +176,12 @@ Options:
       Example:
         agent --docker-arg --privileged codex
 
+  -v, --verbose
+      Print every docker command the launcher runs, quoted so it can be copied
+      and rerun as-is, plus notes about launcher decisions.
+
+      Output goes to stderr.
+
   -h, --help
       Show this help.
 
@@ -195,6 +208,9 @@ Environment:
 
       Default:
         1455
+
+  AI_AGENT_VERBOSE
+      Set to 1 to enable verbose command logging without passing --verbose.
 
 Persistent state:
   The following directories are mounted into every agent container:
@@ -231,6 +247,8 @@ Examples:
 
   agent -p 3000 -p 5173 claude
 
+  agent --verbose -p 3000 claude
+
   agent --ssh-port 2222 codex
 
   agent --credentials "$HOME/.agent-credentials/work" codex
@@ -251,6 +269,32 @@ Examples:
 '@ | Write-Output
 }
 
+function Write-CommandLog {
+    param([string[]] $CommandArguments)
+
+    if (-not $script:VerboseLogging) { return }
+    $quoted = $CommandArguments | ForEach-Object {
+        if ($_ -match '[\s"]') { '"' + ($_ -replace '"', '\"') + '"' } else { $_ }
+    }
+    [Console]::Error.WriteLine("+ docker $($quoted -join ' ')")
+}
+
+function Write-VerboseNote {
+    param([string] $Message)
+
+    if (-not $script:VerboseLogging) { return }
+    [Console]::Error.WriteLine("# $Message")
+}
+
+# Docker fixes published ports when a container is created, so -p can only take
+# effect on a 'docker run'. Reusing or attaching to an existing container has to
+# say so rather than silently dropping the request.
+function Get-RequestedPortSummary {
+    param([string[]] $Ports)
+
+    return (($Ports | ForEach-Object { "  -p $_" }) -join "`n")
+}
+
 function Assert-DockerAvailable {
     if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
         throw 'Docker was not found. Install and start Docker Desktop, then try again.'
@@ -261,10 +305,13 @@ function Get-MatchingContainer {
     param([switch] $IncludeStopped)
 
     $dockerArguments = if ($IncludeStopped) { @('ps', '-a') } else { @('ps') }
-    $result = & docker @dockerArguments `
-        --filter 'label=agent-container=true' `
-        --filter "label=agent-workspace=$script:WorkspaceId" `
-        --format '{{.ID}}'
+    $dockerArguments += @(
+        '--filter', 'label=agent-container=true',
+        '--filter', "label=agent-workspace=$script:WorkspaceId",
+        '--format', '{{.ID}}'
+    )
+    Write-CommandLog $dockerArguments
+    $result = & docker @dockerArguments
     if ($LASTEXITCODE -ne 0) {
         throw 'Unable to query Docker. Make sure Docker Desktop is running.'
     }
@@ -338,11 +385,13 @@ function Invoke-AgentBuild {
     }
 
     $arguments = @('build') + $buildArguments.ToArray() + $DockerBuildArguments + @('--tag', $script:Image, $script:AgentHome)
+    Write-CommandLog $arguments
     & docker @arguments
     if ($LASTEXITCODE -ne 0) { throw "Docker image build failed with exit code $LASTEXITCODE." }
 }
 
 function Assert-AgentImage {
+    Write-CommandLog @('image', 'inspect', $script:Image)
     & docker image inspect $script:Image 2>$null | Out-Null
     if ($LASTEXITCODE -eq 0) { return }
 
@@ -362,6 +411,7 @@ function Assert-AgentImage {
 
 function Invoke-Docker {
     param([string[]] $DockerArguments)
+    Write-CommandLog $DockerArguments
     & docker @DockerArguments
     exit $LASTEXITCODE
 }
@@ -403,6 +453,7 @@ function Remove-SessionMarker {
     $running = Get-MatchingContainer
     if (-not $running) { return }
     Write-Output "Stopping agent container $running"
+    Write-CommandLog @('stop', $running)
     & docker stop $running | Out-Null
 }
 
@@ -413,6 +464,7 @@ function Invoke-InteractiveDocker {
     )
 
     Add-SessionMarker $ContainerName
+    Write-CommandLog $DockerArguments
     try {
         & docker @DockerArguments
         $exitCode = $LASTEXITCODE
@@ -430,6 +482,7 @@ try {
         [System.IO.Path]::GetFullPath((Join-Path $HOME '.agent-container'))
     }
     $script:Image = if ($env:AI_AGENT_IMAGE) { $env:AI_AGENT_IMAGE } else { 'agent-container:latest' }
+    $script:VerboseLogging = $env:AI_AGENT_VERBOSE -eq '1'
     $script:SshHostPort = $env:AI_AGENT_SSH_PORT
     $CodexHostPort = if ($env:AI_AGENT_CODEX_PORT) { $env:AI_AGENT_CODEX_PORT } else { '1455' }
     $script:Workspace = (Get-Item -LiteralPath (Get-Location).Path).FullName
@@ -465,6 +518,7 @@ try {
                 $CodexHostPort = $Arguments[$index]; continue
             }
             '^--no-codex-auth$' { $CodexAuthEnabled = $false; continue }
+            '^(-v|--verbose)$' { $script:VerboseLogging = $true; continue }
             '^--credentials(-ro)?$' {
                 if (++$index -ge $Arguments.Count) { throw "Missing value for $argument" }
                 if ($CredentialsRequested) { throw 'Specify only one of --credentials or --credentials-ro.' }
@@ -551,10 +605,14 @@ try {
         if (-not (Get-Command ssh -ErrorAction SilentlyContinue)) {
             throw 'OpenSSH Client is required. Install it from Windows Optional Features.'
         }
-        $containers = & docker ps --filter 'label=agent-container=true' --filter 'publish=1455' --format '{{.ID}}'
+        $psArguments = @('ps', '--filter', 'label=agent-container=true', '--filter', 'publish=1455', '--format', '{{.ID}}')
+        Write-CommandLog $psArguments
+        $containers = & docker @psArguments
         $sshPort = $null
         foreach ($container in $containers) {
-            $sshPort = & docker inspect --format '{{with index .NetworkSettings.Ports "22/tcp"}}{{(index . 0).HostPort}}{{end}}' $container
+            $inspectArguments = @('inspect', '--format', '{{with index .NetworkSettings.Ports "22/tcp"}}{{(index . 0).HostPort}}{{end}}', $container)
+            Write-CommandLog $inspectArguments
+            $sshPort = & docker @inspectArguments
             if ($sshPort) { break }
         }
         if (-not $sshPort) { throw 'No running agent container publishes the Codex callback port.' }
@@ -582,6 +640,7 @@ try {
         $container = Get-MatchingContainer
         if (-not $container) { Write-Output "No running agent container for:`n  $script:Workspace"; exit 0 }
         Write-Output "Stopping agent container $container"
+        Write-CommandLog @('stop', $container)
         & docker stop $container | Out-Null
         exit 0
     }
@@ -590,6 +649,7 @@ try {
         $container = Get-MatchingContainer -IncludeStopped
         if (-not $container) { Write-Output "No agent container to delete for:`n  $script:Workspace"; exit 0 }
         Write-Output "Deleting agent container $container"
+        Write-CommandLog @('rm', '-f', $container)
         & docker rm -f $container | Out-Null
         exit 0
     }
@@ -609,6 +669,9 @@ try {
     $runningContainer = Get-MatchingContainer
     if (-not $Command.Count -and $runningContainer) {
         if ($CredentialsRequested) { throw 'Credential mounts require a new container. Run agent stop first.' }
+        if ($ExtraPorts.Count) {
+            throw "Published ports can only be configured when creating a container.`nThe existing container for this workspace does not publish:`n$(Get-RequestedPortSummary $ExtraPorts)`n`nDelete it, then relaunch with the port option:`n  agent delete`n  agent -p PORT [command...]"
+        }
         Write-Output "Attaching to agent container $runningContainer"
         $execArguments = @('exec', '--interactive')
         $interactive = -not [Console]::IsInputRedirected -and -not [Console]::IsOutputRedirected
@@ -620,7 +683,10 @@ try {
         Invoke-Docker $execArguments
     }
         if ($runningContainer) {
-        throw "An agent container is already running for this workspace:`n  $script:Workspace`n`nContainer:`n  $runningContainer`n`nUse one of:`n  agent`n  agent exec <command>`n  agent stop`n  agent delete"
+        $portNote = if ($ExtraPorts.Count) {
+            "It does not publish the requested ports:`n$(Get-RequestedPortSummary $ExtraPorts)`n`nDocker fixes published ports when a container is created, so they`nrequire deleting this container and starting a new one.`n`n"
+        } else { '' }
+        throw "An agent container is already running for this workspace:`n  $script:Workspace`n`nContainer:`n  $runningContainer`n`n${portNote}Use one of:`n  agent`n  agent exec <command>`n  agent stop`n  agent delete"
     }
 
 
@@ -654,6 +720,7 @@ try {
     $existingContainer = Get-MatchingContainer -IncludeStopped
     if ($existingContainer) {
         if ([Console]::IsInputRedirected) {
+            Write-CommandLog @('rm', '-f', $existingContainer)
             & docker rm -f $existingContainer | Out-Null
         } else {
             $response = $null
@@ -663,15 +730,28 @@ try {
             Write-Output "Container:"
             Write-Output "  $existingContainer"
             Write-Output ''
+            if ($ExtraPorts.Count) {
+                Write-Output 'Reusing it cannot publish the requested ports:'
+                Write-Output (Get-RequestedPortSummary $ExtraPorts)
+                Write-Output ''
+                Write-Output 'Docker fixes published ports when a container is created.'
+                Write-Output 'Delete it to create a container that publishes them.'
+                Write-Output ''
+            }
             $prompt = Read-Host 'Use existing container, delete it, or cancel? [u/d/C]'
             switch ($prompt) {
                 { $_ -match '^(?i:d)$' } {
                     Write-Output 'Deleting existing container...'
+                    Write-CommandLog @('rm', '-f', $existingContainer)
                     & docker rm -f $existingContainer | Out-Null
                     if ($LASTEXITCODE -ne 0) { throw "Unable to remove container $existingContainer." }
                 }
                 { $_ -match '^(?i:u)$' } {
+                    if ($ExtraPorts.Count) {
+                        Write-Output 'Reusing the existing container; requested ports are not published.'
+                    }
                     Write-Output 'Starting existing container...'
+                    Write-CommandLog @('start', $existingContainer)
                     & docker start $existingContainer | Out-Null
                     Write-Output 'Attaching to existing container...'
                     $execArguments = @('exec', '--interactive')
@@ -784,6 +864,13 @@ try {
 
     $CredentialMountArguments | ForEach-Object { $runArguments.Add($_) }
     if (-not $CodexAuthEnabled) { @('--env', 'CODEX_AUTH_ENABLED=0') | ForEach-Object { $runArguments.Add($_) } }
+
+    Write-VerboseNote "workspace:      $script:Workspace"
+    Write-VerboseNote "workspace id:   $script:WorkspaceId"
+    Write-VerboseNote "container name: $ContainerName"
+    Write-VerboseNote "image:          $script:Image"
+    Write-VerboseNote "requested ports: $(if ($ExtraPorts.Count) { $ExtraPorts -join ' ' } else { 'none' })"
+
     if ($PublishSsh) {
         $resolvedSshPort = Get-SshPort
         @('--publish', "127.0.0.1:${resolvedSshPort}:22") | ForEach-Object { $runArguments.Add($_) }
@@ -796,6 +883,9 @@ try {
     foreach ($port in $ExtraPorts) {
         if ($port -notmatch ':') { $port = "${port}:${port}" }
         @('--publish', $port) | ForEach-Object { $runArguments.Add($_) }
+        $containerPort = $port.Substring($port.LastIndexOf(':') + 1)
+        $hostPort = $port.Substring(0, $port.LastIndexOf(':'))
+        Write-Output "Port:  $hostPort -> container:$containerPort"
     }
     $DockerRunArguments | ForEach-Object { $runArguments.Add($_) }
     $runArguments.Add($script:Image)

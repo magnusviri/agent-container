@@ -676,6 +676,27 @@ Binding development ports to `127.0.0.1` is recommended when they do not need
 to be reachable from other machines. Without an explicit bind address, Docker
 publishes the port on all host interfaces by default.
 
+### Ports only apply to new containers
+
+Docker fixes published ports when a container is created, so `-p` is only
+honored by the `docker run` that creates the workspace container. Reusing or
+attaching to an existing container cannot add a port mapping, and Docker
+Desktop will show no ports for that container.
+
+The launcher reports this instead of silently dropping the request. When a
+container already exists for the workspace, delete it and start a new one:
+
+```bash
+agent delete
+agent -p 3000 claude
+```
+
+Each published port is echoed when the container is created:
+
+```text
+Port:  3000 -> container:3000
+```
+
 ## Opt-in SSH and GitHub credentials
 
 Host SSH and GitHub credentials are not shared with agent containers by
@@ -1141,6 +1162,33 @@ agent \
     claude
 ```
 
+## Verbose logging
+
+Use `-v` or `--verbose` to see every Docker command the launcher runs:
+
+```bash
+agent --verbose -p 3000 claude
+```
+
+Each command is printed to stderr, quoted so it can be copied and rerun
+directly:
+
+```text
++ docker ps --filter label=agent-container=true --filter label=agent-workspace=63d66b2564f5 --format {{.ID}}
+# workspace:      /home/me/project
+# container name: agent-63d66b2564f5
+# image:          agent-container:latest
+# requested ports: 3000
+Port:  3000 -> container:3000
++ docker run --interactive --tty --init --name agent-63d66b2564f5 ... --publish 3000:3000 agent-container:latest claude
+```
+
+This is the quickest way to confirm which `--publish` flags reached
+`docker run`, and whether the launcher created a container at all or reused an
+existing one.
+
+Set `AI_AGENT_VERBOSE=1` to enable the same output without passing the flag.
+
 ## Environment variables
 
 ### `AI_AGENT_HOME`
@@ -1199,6 +1247,17 @@ Example:
 
 ```bash
 export AI_AGENT_CODEX_PORT=1456
+```
+
+### `AI_AGENT_VERBOSE`
+
+Set to `1` to log every Docker command the launcher runs, the same as passing
+`--verbose`.
+
+Example:
+
+```bash
+export AI_AGENT_VERBOSE=1
 ```
 
 ## License
