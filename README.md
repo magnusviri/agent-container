@@ -325,7 +325,7 @@ If no container is running for the current project, this starts a new container 
 If a container is already running for that project, it attaches to the running container using:
 
 ```bash
-docker exec -it <container-id> bash
+docker exec -it --user agent --env HOME=/home/agent <container-id> bash
 ```
 
 If a stopped container exists for the project, it is started instead of creating a
@@ -381,6 +381,9 @@ Use:
 agent exec COMMAND...
 ```
 
+Commands run as the unprivileged `agent` user, including sessions opened from
+a second terminal window.
+
 For example:
 
 ```bash
@@ -414,8 +417,22 @@ agent exec
 This is equivalent to:
 
 ```bash
-docker exec -it <container-id> bash
+docker exec -it --user agent --env HOME=/home/agent <container-id> bash
 ```
+
+For occasional system maintenance, run a command as root from the host:
+
+```bash
+agent root apt-get update
+agent root apt-get install -y PACKAGE
+```
+
+Run `agent root` without a command to open an interactive root shell. This
+privilege is provided by the host launcher through `docker exec`; no `sudo`
+command or other privilege-escalation path is made available to the `agent`
+user inside the container. The default setup does not mount the Docker socket,
+so a coding agent cannot invoke this host-side capability from inside the
+container.
 
 ## Container status
 
@@ -913,13 +930,18 @@ interactive shell and the `codex`, `claude`, and `opencode` commands all run as
 `agent`, whose home directory is `/home/agent`. Their persistent state lives
 under `/home/agent` rather than `/root`.
 
+The launcher also passes `--user agent` whenever it opens another session in
+an existing container. Use the explicit host-side `agent root [COMMAND...]`
+maintenance command only when root access is needed.
+
 This keeps `/root` and other system locations out of reach of the coding
 agents. The tools can still read and write everything under `/workspace`
 (eventually) and their own state under `/home/agent`.
 
-Only the `sshd` that powers Codex authentication runs as `root`; it is started
-in codex mode and must keep root privileges to present a login shell, but the
-agents themselves never run with root privileges.
+Only the `sshd` daemon that powers Codex authentication runs as `root`; it is
+started in codex mode because binding the SSH service and managing logins
+require those privileges. The SSH login itself runs as `agent`, and root login
+over SSH is disabled.
 
 ## Security notes
 
@@ -997,7 +1019,7 @@ Codex: localhost:1455 -> container:1455
 ============================================================
  SSH credentials (randomly generated)
 ------------------------------------------------------------
- User:     root
+ User:     agent
  Password: j2zWKDiDmkw6fWamemvoIb4iaGaQju9HF25nVuGZKAc
  Port:     22
 ============================================================

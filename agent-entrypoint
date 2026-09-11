@@ -8,32 +8,38 @@ if [[ $# -eq 0 ]]; then
 fi
 
 if [[ "$1" == "codex" && "${CODEX_AUTH_ENABLED:-1}" == 1 ]]; then
-  if [[ -z "${ROOT_PASSWORD:-}" ]]; then
-    ROOT_PASSWORD="$(
+  if [[ -n "${AGENT_SSH_PASSWORD:-}" ]]; then
+    SSH_PASSWORD="$AGENT_SSH_PASSWORD"
+    PASSWORD_SOURCE="provided by AGENT_SSH_PASSWORD"
+  elif [[ -n "${ROOT_PASSWORD:-}" ]]; then
+    # Preserve the old, undocumented override name without enabling root login.
+    SSH_PASSWORD="$ROOT_PASSWORD"
+    PASSWORD_SOURCE="provided by ROOT_PASSWORD"
+  else
+    SSH_PASSWORD="$(
       head -c 32 /dev/urandom \
         | base64 \
         | tr -d '\n=+/'
     )"
 
     PASSWORD_SOURCE="randomly generated"
-  else
-    PASSWORD_SOURCE="provided by ROOT_PASSWORD"
   fi
 
-  echo "root:${ROOT_PASSWORD}" | /usr/sbin/chpasswd
+  echo "${AGENT_USER}:${SSH_PASSWORD}" | /usr/sbin/chpasswd
 
   echo
   echo "============================================================"
   echo " SSH credentials (${PASSWORD_SOURCE})"
   echo "------------------------------------------------------------"
-  echo " User:     root"
-  echo " Password: ${ROOT_PASSWORD}"
+  echo " User:     ${AGENT_USER}"
+  echo " Password: ${SSH_PASSWORD}"
   echo " Port:     22"
   echo "============================================================"
   echo
 
   mkdir -p /run/sshd
   /usr/sbin/sshd
+  unset SSH_PASSWORD AGENT_SSH_PASSWORD ROOT_PASSWORD
 fi
 
 case "$1" in

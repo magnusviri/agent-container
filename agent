@@ -93,6 +93,7 @@ Usage:
   agent init
   agent build [docker-build-options...]
   agent exec [command...]
+  agent root [command...]
   agent stop
   agent delete
   agent status
@@ -165,14 +166,27 @@ Behavior:
       or --dangerously-skip-permissions after opencode to override.
 
   agent exec COMMAND...
-      Execute COMMAND inside the running agent container for the current
-      workspace.
+      Execute COMMAND as the unprivileged 'agent' user inside the running
+      agent container for the current workspace.
 
       Examples:
         agent exec bash
         agent exec git status
         agent exec npm test
         agent exec bundle exec rspec
+
+  agent root COMMAND...
+      Execute COMMAND as root inside the running agent container for the
+      current workspace. If COMMAND is omitted, open an interactive root shell.
+
+      This is a host-side maintenance command intended for tasks such as
+      installing system packages. It does not install sudo or grant the
+      in-container 'agent' user permission to become root.
+
+      Examples:
+        agent root
+        agent root apt-get update
+        agent root apt-get install -y PACKAGE
 
   agent stop
       Stop the running agent container for the current workspace.
@@ -346,6 +360,10 @@ Examples:
 
   agent exec npm test
 
+  agent root
+
+  agent root apt-get install -y PACKAGE
+
   agent status
 
   agent stop
@@ -516,7 +534,7 @@ run_interactive() {
     begin_session
     trap end_session EXIT
     "$@" || rc=$?
-    exit "$rc"
+    return "$rc"
 }
 
 build_image() {
@@ -723,7 +741,7 @@ done
 
 if [[ ${#COMMAND[@]} -gt 0 ]]; then
     case "${COMMAND[0]}" in
-        build|exec|stop|delete|status|list|ls|init)
+        build|exec|root|stop|delete|status|list|ls|init)
             if [[ "$CREDENTIALS_REQUESTED" == 1 ]]; then
                 echo "Credential options cannot be used with 'agent ${COMMAND[0]}'." >&2
                 echo "They only apply when creating a new container." >&2
@@ -793,7 +811,7 @@ if [[ ${#COMMAND[@]} -gt 0 ]]; then
                 ssh-keygen -R "[localhost]:${CODEX_SSH_PORT}"
             fi
 
-            exec ssh -p "$CODEX_SSH_PORT" -L 1455:localhost:1455 root@localhost
+            exec ssh -p "$CODEX_SSH_PORT" -L 1455:localhost:1455 agent@localhost
             ;;
 
         exec)
@@ -803,13 +821,18 @@ if [[ ${#COMMAND[@]} -gt 0 ]]; then
                 if interactive_tty; then
                     run_interactive run_docker exec \
                         "${IO_ARGS[@]}" \
+                        --user agent \
+                        --env HOME=/home/agent \
                         --workdir /workspace \
                         "$container" \
                         bash
+                    exit $?
                 fi
 
                 exec_docker exec \
                     "${IO_ARGS[@]}" \
+                    --user agent \
+                    --env HOME=/home/agent \
                     --workdir /workspace \
                     "$container" \
                     bash
@@ -817,6 +840,41 @@ if [[ ${#COMMAND[@]} -gt 0 ]]; then
 
             exec_docker exec \
                 "${IO_ARGS[@]}" \
+                --user agent \
+                --env HOME=/home/agent \
+                --workdir /workspace \
+                "$container" \
+                "${COMMAND[@]:1}"
+            ;;
+
+        root)
+            container="$(require_running_container)"
+
+            if [[ ${#COMMAND[@]} -eq 1 ]]; then
+                if interactive_tty; then
+                    run_interactive run_docker exec \
+                        "${IO_ARGS[@]}" \
+                        --user root \
+                        --env HOME=/root \
+                        --workdir /workspace \
+                        "$container" \
+                        bash
+                    exit $?
+                fi
+
+                exec_docker exec \
+                    "${IO_ARGS[@]}" \
+                    --user root \
+                    --env HOME=/root \
+                    --workdir /workspace \
+                    "$container" \
+                    bash
+            fi
+
+            exec_docker exec \
+                "${IO_ARGS[@]}" \
+                --user root \
+                --env HOME=/root \
                 --workdir /workspace \
                 "$container" \
                 "${COMMAND[@]:1}"
@@ -901,13 +959,18 @@ if [[ ${#COMMAND[@]} -eq 0 ]]; then
         if interactive_tty; then
             run_interactive run_docker exec \
                 "${IO_ARGS[@]}" \
+                --user agent \
+                --env HOME=/home/agent \
                 --workdir /workspace \
                 "$RUNNING_CONTAINER" \
                 bash
+            exit $?
         fi
 
         exec_docker exec \
             "${IO_ARGS[@]}" \
+            --user agent \
+            --env HOME=/home/agent \
             --workdir /workspace \
             "$RUNNING_CONTAINER" \
             bash
@@ -944,6 +1007,7 @@ if [[ -n "$RUNNING_CONTAINER" ]]; then
     echo "Use one of:"
     echo "  agent"
     echo "  agent exec <command>"
+    echo "  agent root [command]"
     echo "  agent stop"
     echo "  agent delete"
     exit 1
@@ -1054,12 +1118,17 @@ if [[ -n "$EXISTING_CONTAINER" ]]; then
             if interactive_tty; then
                 run_interactive run_docker exec \
                     "${IO_ARGS[@]}" \
+                    --user agent \
+                    --env HOME=/home/agent \
                     --workdir /workspace \
                     "$EXISTING_CONTAINER" \
                     bash
+                exit $?
             fi
             exec_docker exec \
                 "${IO_ARGS[@]}" \
+                --user agent \
+                --env HOME=/home/agent \
                 --workdir /workspace \
                 "$EXISTING_CONTAINER" \
                 bash
@@ -1256,10 +1325,12 @@ if (( ${#COMMAND[@]} > 0 )); then
         "${DOCKER_ARGS[@]}" \
         "$IMAGE" \
         "${COMMAND[@]}"
+    exit $?
 else
     run_interactive run_docker run \
         "${RUN_ARGS[@]}" \
         "${PORT_ARGS[@]}" \
         "${DOCKER_ARGS[@]}" \
         "$IMAGE"
+    exit $?
 fi

@@ -10,6 +10,7 @@ Usage:
   agent init
   agent build [docker-build-options...]
   agent exec [command...]
+  agent root [command...]
   agent stop
   agent delete
   agent status
@@ -82,14 +83,27 @@ Behavior:
       or --dangerously-skip-permissions after opencode to override.
 
   agent exec COMMAND...
-      Execute COMMAND inside the running agent container for the current
-      workspace.
+      Execute COMMAND as the unprivileged 'agent' user inside the running
+      agent container for the current workspace.
 
       Examples:
         agent exec bash
         agent exec git status
         agent exec npm test
         agent exec bundle exec rspec
+
+  agent root COMMAND...
+      Execute COMMAND as root inside the running agent container for the
+      current workspace. If COMMAND is omitted, open an interactive root shell.
+
+      This is a host-side maintenance command intended for tasks such as
+      installing system packages. It does not install sudo or grant the
+      in-container 'agent' user permission to become root.
+
+      Examples:
+        agent root
+        agent root apt-get update
+        agent root apt-get install -y PACKAGE
 
   agent stop
       Stop the running agent container for the current workspace.
@@ -260,6 +274,10 @@ Examples:
   agent exec git status
 
   agent exec npm test
+
+  agent root
+
+  agent root apt-get install -y PACKAGE
 
   agent status
 
@@ -591,7 +609,7 @@ try {
 
     Assert-DockerAvailable
 
-    if ($CredentialsRequested -and $builtIn -in @('build', 'exec', 'stop', 'delete', 'status', 'list', 'ls')) {
+    if ($CredentialsRequested -and $builtIn -in @('build', 'exec', 'root', 'stop', 'delete', 'status', 'list', 'ls')) {
         throw "Credential options cannot be used with 'agent $builtIn'; they only apply when creating a container."
     }
 
@@ -619,7 +637,7 @@ try {
         if (Get-Command ssh-keygen -ErrorAction SilentlyContinue) {
             & ssh-keygen -R "[localhost]:$sshPort" 2>$null | Out-Null
         }
-        & ssh -p $sshPort -L 1455:localhost:1455 root@localhost
+        & ssh -p $sshPort -L 1455:localhost:1455 agent@localhost
         exit $LASTEXITCODE
     }
 
@@ -628,7 +646,20 @@ try {
         $execArguments = @('exec', '--interactive')
         $interactive = -not [Console]::IsInputRedirected -and -not [Console]::IsOutputRedirected
         if ($interactive) { $execArguments += '--tty' }
-        $execArguments += @('--workdir', '/workspace', $container)
+        $execArguments += @('--user', 'agent', '--env', 'HOME=/home/agent', '--workdir', '/workspace', $container)
+        if ($Command.Count -eq 1) { $execArguments += 'bash' } else { $execArguments += $Command.GetRange(1, $Command.Count - 1) }
+        if ($interactive -and $Command.Count -eq 1) {
+            Invoke-InteractiveDocker $ContainerName $execArguments
+        }
+        Invoke-Docker $execArguments
+    }
+
+    if ($builtIn -eq 'root') {
+        $container = Get-RunningContainer
+        $execArguments = @('exec', '--interactive')
+        $interactive = -not [Console]::IsInputRedirected -and -not [Console]::IsOutputRedirected
+        if ($interactive) { $execArguments += '--tty' }
+        $execArguments += @('--user', 'root', '--env', 'HOME=/root', '--workdir', '/workspace', $container)
         if ($Command.Count -eq 1) { $execArguments += 'bash' } else { $execArguments += $Command.GetRange(1, $Command.Count - 1) }
         if ($interactive -and $Command.Count -eq 1) {
             Invoke-InteractiveDocker $ContainerName $execArguments
@@ -676,7 +707,7 @@ try {
         $execArguments = @('exec', '--interactive')
         $interactive = -not [Console]::IsInputRedirected -and -not [Console]::IsOutputRedirected
         if ($interactive) { $execArguments += '--tty' }
-        $execArguments += @('--workdir', '/workspace', $runningContainer, 'bash')
+        $execArguments += @('--user', 'agent', '--env', 'HOME=/home/agent', '--workdir', '/workspace', $runningContainer, 'bash')
         if ($interactive) {
             Invoke-InteractiveDocker $ContainerName $execArguments
         }
@@ -686,7 +717,7 @@ try {
         $portNote = if ($ExtraPorts.Count) {
             "It does not publish the requested ports:`n$(Get-RequestedPortSummary $ExtraPorts)`n`nDocker fixes published ports when a container is created, so they`nrequire deleting this container and starting a new one.`n`n"
         } else { '' }
-        throw "An agent container is already running for this workspace:`n  $script:Workspace`n`nContainer:`n  $runningContainer`n`n${portNote}Use one of:`n  agent`n  agent exec <command>`n  agent stop`n  agent delete"
+        throw "An agent container is already running for this workspace:`n  $script:Workspace`n`nContainer:`n  $runningContainer`n`n${portNote}Use one of:`n  agent`n  agent exec <command>`n  agent root [command]`n  agent stop`n  agent delete"
     }
 
 
@@ -757,7 +788,7 @@ try {
                     $execArguments = @('exec', '--interactive')
                     $interactive = -not [Console]::IsInputRedirected -and -not [Console]::IsOutputRedirected
                     if ($interactive) { $execArguments += '--tty' }
-                    $execArguments += @('--workdir', '/workspace', $existingContainer, 'bash')
+                    $execArguments += @('--user', 'agent', '--env', 'HOME=/home/agent', '--workdir', '/workspace', $existingContainer, 'bash')
                     if ($interactive) {
                         Invoke-InteractiveDocker $ContainerName $execArguments
                     }

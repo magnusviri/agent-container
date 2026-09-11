@@ -190,7 +190,7 @@ RUN mkdir -p \
     && chown -R agent:agent /home/agent \
     && chown agent:agent /workspace \
     && ssh-keygen -A \
-    && printf '\nPermitRootLogin yes\nPasswordAuthentication yes\n' >> /etc/ssh/sshd_config \
+    && printf '\nPermitRootLogin no\nPasswordAuthentication yes\n' >> /etc/ssh/sshd_config \
     && /usr/sbin/sshd -t
 
 COPY agent-entrypoint /usr/local/bin/agent-entrypoint
