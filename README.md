@@ -325,6 +325,74 @@ define an `opencode` wrapper, so typing `opencode` in a shell behaves like
 `agent opencode`. Passing an explicit `--auto`, `--yolo`, or
 `--dangerously-skip-permissions` option still overrides it.
 
+### Ralph loop
+
+Ralph runs one task at a time in a fresh Codex, Claude Code, or OpenCode
+process. Code changes, the task queue, and a progress log carry context between
+iterations; agent conversation history does not.
+
+Authenticate the selected backend before leaving it unattended. Ralph reuses
+the same persisted Codex, Claude Code, and OpenCode state as interactive agent
+sessions; it does not perform an interactive login during the loop.
+
+Initialize a project from the host:
+
+```bash
+agent ralph init
+```
+
+This creates missing files without replacing existing ones:
+
+```text
+AGENTS-RALPH.md          Ralph-only operating instructions
+tasks.json               local task queue
+progress.md              local progress and reusable learnings
+```
+
+The initializer adds `/tasks.json` and `/progress.md` to the project's
+`.gitignore`. Commit `AGENTS-RALPH.md` when the project should share its
+Ralph behavior.
+
+Ask an agent to inspect the project and prepare the task queue before starting
+the loop. The container instructions include the full schema and planning
+rules. A suitable prompt is:
+
+```text
+Inspect this repository and create /workspace/tasks.json for Ralph to
+implement: <describe the feature>. Follow the "Creating Ralph tasks.json"
+instructions in /usr/local/share/agent-container/AGENTS-CONTAINER.md. Do not
+implement the tasks.
+```
+
+Then select a backend and optionally set the maximum number of iterations
+(default 10):
+
+```bash
+agent ralph --tool codex
+agent ralph --tool claude 20
+agent ralph --tool opencode
+```
+
+If a matching container is already running, `agent ralph` executes there. If a
+stopped container exists, the launcher starts and reuses it. Otherwise, the
+launcher creates a reusable workspace container, runs Ralph inside it, and
+stops it when the loop exits. The launcher then offers the normal choice to
+keep or delete the stopped container.
+
+From a shell already inside the container, use the same loop directly without
+Docker:
+
+```bash
+ralph init
+ralph --tool codex
+ralph --tool claude 20
+ralph --tool opencode
+```
+
+Every iteration starts a new non-interactive backend process and works on one
+highest-priority story whose `passes` value is `false`. The loop succeeds only
+after every story passes and the agent emits `<promise>COMPLETE</promise>`.
+
 ### Generic shell
 
 ```bash
@@ -860,6 +928,8 @@ The default installation location is:
 ├── agent.cmd
 ├── agent.ps1
 ├── agent-entrypoint
+├── ralph
+├── AGENTS-CONTAINER.md
 ├── README.md
 ├── LICENSE
 ├── .gitignore
@@ -868,6 +938,7 @@ The default installation location is:
 │   └── AGENTS.md
 ├── .claude/
 │   └── CLAUDE.md -> ../.codex/AGENTS.md
+├── AGENTS-RALPH.md
 ├── .config/
 │   └── opencode/
 │       └── AGENTS.md -> ../../.codex/AGENTS.md

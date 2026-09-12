@@ -92,6 +92,8 @@ Usage:
   agent [options] [--] [command...]
   agent init
   agent build [docker-build-options...]
+  agent ralph init
+  agent ralph --tool <codex|claude|opencode> [max_iterations]
   agent exec [command...]
   agent root [command...]
   agent stop
@@ -165,6 +167,13 @@ Behavior:
       OpenCode defaults to --dangerously-skip-permissions because the
       container provides the outer isolation boundary. Pass --auto, --yolo,
       or --dangerously-skip-permissions after opencode to override.
+
+  agent ralph
+      Start the fresh-context Ralph loop in the workspace container.
+
+      Use 'agent ralph init' once to create the workspace instruction, task,
+      and progress files. Select an agent with --tool. If the workspace
+      container is already running, Ralph starts inside that container.
 
   agent exec COMMAND...
       Execute COMMAND as the unprivileged 'agent' user inside the running
@@ -345,6 +354,14 @@ Examples:
   agent claude
 
   agent opencode
+
+  agent ralph init
+
+  agent ralph --tool codex
+
+  agent ralph --tool claude 20
+
+  agent ralph --tool opencode
 
   agent -p 3000 codex
 
@@ -1072,6 +1089,29 @@ if [[ ${#COMMAND[@]} -gt 0 ]]; then
                 --format 'ID: {{.ID}}	Name: {{.Names}}	Image: {{.Image}}	Status: {{.Status}}	Ports: {{.Ports}}	PWD: {{.Label "agent-workspace-path"}}'
             exit 0
             ;;
+
+        ralph)
+            container="$(find_running_container)"
+
+            if [[ -n "$container" ]]; then
+                if [[ "$CREDENTIALS_REQUESTED" == 1 ]]; then
+                    credentials_require_new_container
+                fi
+
+                if [[ ${#EXTRA_PORTS[@]} -gt 0 ]] \
+                    && ! requested_ports_are_configured "$container"; then
+                    ports_require_new_container
+                fi
+
+                exec_docker exec \
+                    "${IO_ARGS[@]}" \
+                    --user agent \
+                    --env HOME=/home/agent \
+                    --workdir /workspace \
+                    "$container" \
+                    "${COMMAND[@]}"
+            fi
+            ;;
     esac
 fi
 
@@ -1218,6 +1258,19 @@ if [[ -n "$EXISTING_CONTAINER" ]]; then
     echo "Starting existing container $EXISTING_CONTAINER..."
     run_docker start "$EXISTING_CONTAINER" >/dev/null
     print_published_ports "$EXISTING_CONTAINER"
+
+    if [[ ${#COMMAND[@]} -gt 0 && "${COMMAND[0]}" == "ralph" ]]; then
+        echo "Starting Ralph in existing container..."
+        run_interactive run_docker exec \
+            "${IO_ARGS[@]}" \
+            --user agent \
+            --env HOME=/home/agent \
+            --workdir /workspace \
+            "$EXISTING_CONTAINER" \
+            "${COMMAND[@]}"
+        exit $?
+    fi
+
     echo "Attaching to existing container..."
     if interactive_tty; then
         run_interactive run_docker exec \
@@ -1275,7 +1328,10 @@ else
     PUBLISH_CODEX=0
 fi
 
-if [[ ${#EXTRA_PORTS[@]} -eq 0 && "$PUBLISH_SSH" == 0 && "$PUBLISH_CODEX" == 0 ]]; then
+if [[ ${#EXTRA_PORTS[@]} -eq 0 \
+    && "$PUBLISH_SSH" == 0 \
+    && "$PUBLISH_CODEX" == 0 \
+    && ! ( ${#COMMAND[@]} -gt 0 && "${COMMAND[0]}" == "ralph" ) ]]; then
     confirm_no_published_ports
 fi
 
@@ -1424,6 +1480,28 @@ fi
 # -----------------------------------------------------------------------------
 # Launch
 # -----------------------------------------------------------------------------
+
+if (( ${#COMMAND[@]} > 0 )) && [[ "${COMMAND[0]}" == "ralph" ]]; then
+    begin_session
+    trap end_session EXIT
+
+    run_docker run \
+        --detach \
+        "${RUN_ARGS[@]}" \
+        "${PORT_ARGS[@]}" \
+        "${DOCKER_ARGS[@]}" \
+        "$IMAGE" \
+        sleep infinity >/dev/null
+
+    run_docker exec \
+        "${IO_ARGS[@]}" \
+        --user agent \
+        --env HOME=/home/agent \
+        --workdir /workspace \
+        "$CONTAINER_NAME" \
+        "${COMMAND[@]}"
+    exit $?
+fi
 
 if (( ${#COMMAND[@]} > 0 )); then
     run_interactive run_docker run \

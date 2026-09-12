@@ -210,8 +210,10 @@ RUN mkdir -p \
     && printf '\nPermitRootLogin no\nPasswordAuthentication yes\n' >> /etc/ssh/sshd_config \
     && /usr/sbin/sshd -t
 
-COPY agent-entrypoint /usr/local/bin/agent-entrypoint
-RUN chmod 0755 /usr/local/bin/agent-entrypoint
+COPY agent-entrypoint ralph /usr/local/bin/
+COPY AGENTS-RALPH.md /usr/local/share/ralph/AGENTS-RALPH.md
+COPY AGENTS-CONTAINER.md /usr/local/share/agent-container/AGENTS-CONTAINER.md
+RUN chmod 0755 /usr/local/bin/agent-entrypoint /usr/local/bin/ralph
 
 RUN set -eux; \
     test -x /usr/sbin/chpasswd; \
@@ -249,6 +251,7 @@ RUN set -eux; \
     claude --version; \
     codex --version; \
     opencode --version; \
+    ralph --help; \
     uv --version
 
 ENTRYPOINT ["/usr/local/bin/agent-entrypoint"]

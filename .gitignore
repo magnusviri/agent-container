@@ -7,3 +7,5 @@
 .local/share/opencode/*
 .DS_Store
 versions.env
+/tasks.json
+/progress.md

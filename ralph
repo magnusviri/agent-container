@@ -1,0 +1,269 @@
+#!/usr/bin/env bash
+set -uo pipefail
+
+WORKSPACE="${RALPH_WORKSPACE:-/workspace}"
+INSTRUCTIONS_FILE="$WORKSPACE/AGENTS-RALPH.md"
+TASKS_FILE="$WORKSPACE/tasks.json"
+PROGRESS_FILE="$WORKSPACE/progress.md"
+DEFAULT_MAX_ITERATIONS=10
+OUTPUT_FILE=""
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+if [[ -f "/usr/local/share/ralph/AGENTS-RALPH.md" ]]; then
+    INSTRUCTIONS_TEMPLATE="/usr/local/share/ralph/AGENTS-RALPH.md"
+else
+    INSTRUCTIONS_TEMPLATE="$SCRIPT_DIR/AGENTS-RALPH.md"
+fi
+
+cleanup() {
+    if [[ -n "$OUTPUT_FILE" ]]; then
+        rm -f "$OUTPUT_FILE"
+    fi
+}
+trap cleanup EXIT
+
+usage() {
+    cat <<'EOF'
+Usage:
+  ralph init
+  ralph --tool <codex|claude|opencode> [max_iterations]
+  ralph --tool=<codex|claude|opencode> [max_iterations]
+
+Each iteration starts a fresh coding-agent process. State is carried between
+iterations through /workspace/tasks.json and /workspace/progress.md.
+EOF
+}
+
+add_gitignore_entry() {
+    local entry="$1"
+    local gitignore="$WORKSPACE/.gitignore"
+
+    if [[ -f "$gitignore" ]] && grep -Fqx -- "$entry" "$gitignore"; then
+        return
+    fi
+
+    if [[ -s "$gitignore" ]] && [[ "$(tail -c 1 "$gitignore" 2>/dev/null || true)" != "" ]]; then
+        printf '\n' >> "$gitignore"
+    fi
+    printf '%s\n' "$entry" >> "$gitignore"
+}
+
+initialize_workspace() {
+    if [[ ! -e "$INSTRUCTIONS_FILE" ]]; then
+        if [[ ! -f "$INSTRUCTIONS_TEMPLATE" ]]; then
+            echo "Ralph instruction template is missing: $INSTRUCTIONS_TEMPLATE" >&2
+            return 1
+        fi
+        cp "$INSTRUCTIONS_TEMPLATE" "$INSTRUCTIONS_FILE"
+        echo "Created $INSTRUCTIONS_FILE"
+    else
+        echo "Keeping existing $INSTRUCTIONS_FILE"
+    fi
+
+    if [[ ! -e "$TASKS_FILE" ]]; then
+        cat > "$TASKS_FILE" <<'EOF'
+{
+  "branchName": "ralph/replace-with-feature-name",
+  "userStories": []
+}
+EOF
+        echo "Created $TASKS_FILE"
+    else
+        echo "Keeping existing $TASKS_FILE"
+    fi
+
+    if [[ ! -e "$PROGRESS_FILE" ]]; then
+        cat > "$PROGRESS_FILE" <<EOF
+# Ralph Progress Log
+
+Started: $(date -u '+%Y-%m-%dT%H:%M:%SZ')
+
+## Codebase Patterns
+
+---
+EOF
+        echo "Created $PROGRESS_FILE"
+    else
+        echo "Keeping existing $PROGRESS_FILE"
+    fi
+
+    add_gitignore_entry "/tasks.json"
+    add_gitignore_entry "/progress.md"
+    echo "Updated $WORKSPACE/.gitignore"
+}
+
+validate_tasks() {
+    if ! jq -e '
+        type == "object" and
+        (.branchName | type == "string" and length > 0) and
+        (.userStories | type == "array" and length > 0) and
+        all(.userStories[];
+            type == "object" and
+            (.id | type == "string" and length > 0) and
+            (.title | type == "string" and length > 0) and
+            (.description | type == "string" and length > 0) and
+            (.acceptanceCriteria | type == "array" and all(.[]; type == "string" and length > 0)) and
+            (.priority | type == "number") and
+            (.passes | type == "boolean")
+        ) and
+        ([.userStories[].id] | length == (unique | length))
+    ' "$TASKS_FILE" >/dev/null 2>&1; then
+        echo "Invalid $TASKS_FILE." >&2
+        echo "Run 'ralph init', then populate tasks.json using the documented schema." >&2
+        return 1
+    fi
+}
+
+all_stories_pass() {
+    jq -e 'all(.userStories[]; .passes == true)' "$TASKS_FILE" >/dev/null
+}
+
+run_backend() {
+    local tool="$1"
+
+    case "$tool" in
+        codex)
+            codex exec --ephemeral --sandbox danger-full-access - < "$INSTRUCTIONS_FILE"
+            ;;
+        claude)
+            claude --dangerously-skip-permissions --print < "$INSTRUCTIONS_FILE"
+            ;;
+        opencode)
+            opencode --dangerously-skip-permissions run "$(< "$INSTRUCTIONS_FILE")"
+            ;;
+    esac
+}
+
+main() {
+    local tool=""
+    local max_iterations="$DEFAULT_MAX_ITERATIONS"
+    local output backend_status
+    local iteration
+
+    if [[ "${1:-}" == "init" ]]; then
+        shift
+        if [[ $# -ne 0 ]]; then
+            echo "'ralph init' does not accept additional arguments." >&2
+            usage >&2
+            return 2
+        fi
+        initialize_workspace
+        return
+    fi
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --tool)
+                if [[ $# -lt 2 ]]; then
+                    echo "Missing value for --tool." >&2
+                    return 2
+                fi
+                tool="$2"
+                shift 2
+                ;;
+            --tool=*)
+                tool="${1#*=}"
+                shift
+                ;;
+            -h|--help)
+                usage
+                return
+                ;;
+            *)
+                if [[ "$1" =~ ^[1-9][0-9]*$ ]]; then
+                    max_iterations="$1"
+                    shift
+                else
+                    echo "Unknown argument: $1" >&2
+                    usage >&2
+                    return 2
+                fi
+                ;;
+        esac
+    done
+
+    case "$tool" in
+        codex|claude|opencode) ;;
+        "")
+            echo "Missing required --tool option." >&2
+            usage >&2
+            return 2
+            ;;
+        *)
+            echo "Unsupported tool: $tool" >&2
+            echo "Choose codex, claude, or opencode." >&2
+            return 2
+            ;;
+    esac
+
+    if [[ ! -d "$WORKSPACE" ]]; then
+        echo "Workspace directory does not exist: $WORKSPACE" >&2
+        return 1
+    fi
+    cd "$WORKSPACE" || return
+
+    if [[ ! -f "$INSTRUCTIONS_FILE" || ! -f "$TASKS_FILE" || ! -f "$PROGRESS_FILE" ]]; then
+        echo "Ralph is not initialized in $WORKSPACE." >&2
+        echo "Run 'ralph init' first." >&2
+        return 1
+    fi
+    if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        echo "Ralph requires a Git repository in $WORKSPACE." >&2
+        return 1
+    fi
+    if ! command -v "$tool" >/dev/null 2>&1; then
+        echo "Required agent CLI is not installed: $tool" >&2
+        return 1
+    fi
+    validate_tasks || return
+
+    if all_stories_pass; then
+        echo "All stories in $TASKS_FILE already pass."
+        return
+    fi
+
+    OUTPUT_FILE="$(mktemp)" || return
+
+    echo "Starting Ralph - Tool: $tool - Max iterations: $max_iterations"
+    for ((iteration = 1; iteration <= max_iterations; iteration++)); do
+        echo
+        echo "==============================================================="
+        echo "  Ralph iteration $iteration of $max_iterations ($tool)"
+        echo "==============================================================="
+
+        : > "$OUTPUT_FILE"
+        run_backend "$tool" 2>&1 | tee "$OUTPUT_FILE"
+        backend_status=${PIPESTATUS[0]}
+        output="$(< "$OUTPUT_FILE")"
+
+        if [[ "$backend_status" -eq 130 || "$backend_status" -eq 143 ]]; then
+            echo "Ralph interrupted." >&2
+            return "$backend_status"
+        fi
+
+        if ! validate_tasks; then
+            echo "The agent left tasks.json invalid; stopping." >&2
+            return 1
+        fi
+
+        if [[ "$output" == *"<promise>COMPLETE</promise>"* ]] && all_stories_pass; then
+            echo
+            echo "Ralph completed all stories at iteration $iteration."
+            return
+        fi
+
+        if all_stories_pass; then
+            echo "All stories pass, but the agent did not emit the completion promise." >&2
+        elif [[ "$backend_status" -ne 0 ]]; then
+            echo "Agent iteration exited with status $backend_status; continuing with fresh context." >&2
+        else
+            echo "Iteration $iteration complete. Continuing with fresh context."
+        fi
+    done
+
+    echo >&2
+    echo "Ralph reached $max_iterations iterations without confirmed completion." >&2
+    echo "Check $PROGRESS_FILE and $TASKS_FILE for status." >&2
+    return 1
+}
+
+main "$@"
