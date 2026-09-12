@@ -106,6 +106,7 @@ Behavior:
 
       If no container is running but a stopped container exists, start it.
       When the last interactive terminal exits, the container is stopped.
+      The launcher then asks whether to keep or delete the stopped container.
 
       If no container exists, start a new container with Bash.
 
@@ -513,9 +514,44 @@ begin_session() {
     : > "$SESSIONS_DIR/$CONTAINER_NAME.$$"
 }
 
+# shellcheck disable=SC2317 # invoked through end_session's EXIT-trap path
+prompt_container_disposition() {
+    local container="$1"
+    local response
+
+    if [[ ! -t 0 || ! -t 1 ]]; then
+        echo "Keeping stopped agent container $container"
+        return 0
+    fi
+
+    while true; do
+        if ! read -r -p "Keep or delete the stopped agent container? [K/d] " response; then
+            echo
+            response="keep"
+        fi
+
+        case "$response" in
+            ""|[Kk]|[Kk][Ee][Ee][Pp])
+                echo "Keeping stopped agent container $container"
+                return 0
+                ;;
+            [Dd]|[Dd][Ee][Ll][Ee][Tt][Ee])
+                echo "Deleting agent container $container"
+                if ! run_docker rm "$container" >/dev/null; then
+                    echo "Unable to delete agent container $container" >&2
+                fi
+                return 0
+                ;;
+            *)
+                echo "Please enter 'keep' or 'delete'."
+                ;;
+        esac
+    done
+}
+
 # shellcheck disable=SC2317 # invoked through the EXIT trap in run_interactive
 end_session() {
-    local entry running
+    local container entry running
 
     rm -f "$SESSIONS_DIR/$CONTAINER_NAME.$$"
     prune_sessions
@@ -525,10 +561,17 @@ end_session() {
     done
 
     running="$(find_running_container)"
-    [[ -n "$running" ]] || return 0
+    if [[ -n "$running" ]]; then
+        echo "Stopping agent container $running"
+        if ! run_docker stop "$running" >/dev/null 2>&1; then
+            echo "Unable to stop agent container $running" >&2
+            return 0
+        fi
+    fi
 
-    echo "Stopping agent container $running"
-    run_docker stop "$running" >/dev/null 2>&1 || true
+    container="$(find_existing_container)"
+    [[ -n "$container" ]] || return 0
+    prompt_container_disposition "$container"
 }
 
 run_interactive() {

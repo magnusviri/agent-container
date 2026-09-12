@@ -23,6 +23,7 @@ Behavior:
 
       If no container is running but a stopped container exists, start it.
       When the last interactive terminal exits, the container is stopped.
+      The launcher then asks whether to keep or delete the stopped container.
 
       If no container exists, start a new container with a shell.
 
@@ -533,6 +534,40 @@ function Add-SessionMarker {
     New-Item -ItemType File -Force -Path (Join-Path $script:SessionsDir "$ContainerName.$PID") | Out-Null
 }
 
+function Confirm-ContainerDisposition {
+    param([string] $Container)
+
+    if ([Console]::IsInputRedirected -or [Console]::IsOutputRedirected) {
+        Write-Output "Keeping stopped agent container $Container"
+        return
+    }
+
+    while ($true) {
+        try {
+            $response = Read-Host 'Keep or delete the stopped agent container? [K/d]'
+        }
+        catch {
+            $response = 'keep'
+        }
+
+        if (-not $response -or $response -match '^(?i:k|keep)$') {
+            Write-Output "Keeping stopped agent container $Container"
+            return
+        }
+        if ($response -match '^(?i:d|delete)$') {
+            Write-Output "Deleting agent container $Container"
+            Write-CommandLog @('rm', $Container)
+            & docker rm $Container | Out-Null
+            if ($LASTEXITCODE -ne 0) {
+                [Console]::Error.WriteLine("Unable to delete agent container $Container")
+            }
+            return
+        }
+
+        Write-Output "Please enter 'keep' or 'delete'."
+    }
+}
+
 function Remove-SessionMarker {
     param([string] $ContainerName)
 
@@ -542,10 +577,18 @@ function Remove-SessionMarker {
     if ($markers.Count -gt 0) { return }
 
     $running = Get-MatchingContainer
-    if (-not $running) { return }
-    Write-Output "Stopping agent container $running"
-    Write-CommandLog @('stop', $running)
-    & docker stop $running | Out-Null
+    if ($running) {
+        Write-Output "Stopping agent container $running"
+        Write-CommandLog @('stop', $running)
+        & docker stop $running | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            [Console]::Error.WriteLine("Unable to stop agent container $running")
+            return
+        }
+    }
+
+    $container = Get-MatchingContainer -IncludeStopped
+    if ($container) { Confirm-ContainerDisposition $container }
 }
 
 function Invoke-InteractiveDocker {

@@ -333,6 +333,8 @@ docker exec -it --user agent --env HOME=/home/agent <container-id> bash
 If a stopped container exists for the project, it is started automatically
 instead of creating a new one. The container stays up while interactive
 terminals are attached and is stopped once the last interactive terminal exits.
+The launcher then asks whether to keep the stopped container for later reuse or
+delete it. Keeping it is the default.
 
 This makes it easy to open multiple terminals into the same agent environment.
 
@@ -483,9 +485,10 @@ Stop the agent container associated with the current project:
 agent stop
 ```
 
-Containers stay around after they exit so you can inspect logs, reuse the
-filesystem, or restart them. To remove the container for the current workspace,
-use `agent delete`.
+When the last interactive terminal exits, the launcher asks whether to keep the
+stopped container so you can inspect logs, reuse the filesystem, or restart it,
+or delete it immediately. To remove a kept container for the current workspace
+later, use `agent delete`.
 
 Persistent AI-agent state is stored on the host and is not removed.
 
