@@ -23,6 +23,7 @@ It provides a consistent toolchain for:
 * repository inspection
 * networking
 * shell/static-analysis utilities
+* code formatters for the included language toolchains
 
 The container can be launched from **any project directory** just by typing
 `agent` in a terminal. The current directory is mounted as `/workspace`, while
@@ -47,6 +48,14 @@ Ruby / Bundler (managed by mise)
 Node.js / npm (managed by mise)
 uv
 PowerShell
+
+shfmt (Bash and POSIX shell)
+Ruff (Python)
+Standard Ruby
+Prettier (JavaScript, TypeScript, JSON, YAML, and Markdown)
+PSScriptAnalyzer / Invoke-Formatter (PowerShell)
+clang-format (C and C++)
+cmake-format
 
 Claude Code
 OpenAI Codex

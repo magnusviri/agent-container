@@ -90,6 +90,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     strace \
     lsof \
     shellcheck \
+    shfmt \
+    clang-format \
     sqlite3 \
     rsync \
     ansible \
@@ -104,6 +106,8 @@ RUN set -eux; \
     rm /tmp/packages-microsoft-prod.deb; \
     apt-get update; \
     apt-get install -y --no-install-recommends powershell; \
+    pwsh -NoLogo -NoProfile -Command \
+        "Install-Module -Name PSScriptAnalyzer -Repository PSGallery -Scope AllUsers -Force"; \
     rm -rf /var/lib/apt/lists/*
 
 RUN curl -fsSL https://mise.run | sh \
@@ -123,14 +127,17 @@ RUN mise install --system \
     && ruby --version \
     && node --version \
     && gem --version \
+    && python -m pip install ruff cmakelang \
     && gem install bundler -v "${BUNDLER_VERSION}" --no-document \
+    && gem install standard --no-document \
     && mise reshim \
     && bundle --version
 
 RUN npm install --global \
       @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} \
       @openai/codex@${CODEX_VERSION} \
-      opencode-ai@${OPENCODE_VERSION}
+      opencode-ai@${OPENCODE_VERSION} \
+      prettier
 
 RUN curl -LsSf https://astral.sh/uv/install.sh | UV_NO_MODIFY_PATH=1 sh \
     && install -m 0755 /root/.local/bin/uv /usr/local/bin/uv \
@@ -223,11 +230,19 @@ RUN set -eux; \
     g++ --version; \
     make --version; \
     cmake --version; \
+    cmake-format --version; \
     rg --version; \
     jq --version; \
     minify --version; \
     ansible --version; \
     shellcheck --version; \
+    shfmt --version; \
+    clang-format --version; \
+    ruff --version; \
+    standardrb --version; \
+    prettier --version; \
+    pwsh -NoLogo -NoProfile -Command \
+        "Import-Module PSScriptAnalyzer -ErrorAction Stop; Get-Command Invoke-Formatter -ErrorAction Stop | Out-Null; (Get-Module PSScriptAnalyzer).Version.ToString()"; \
     strace --version; \
     gdb --version; \
     ssh -V; \
