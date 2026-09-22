@@ -9,7 +9,11 @@ AGENT_HOME="${AI_AGENT_HOME:-$HOME/.agent-container}"
 IMAGE="${AI_AGENT_IMAGE:-agent-container:latest}"
 
 SSH_HOST_PORT="${AI_AGENT_SSH_PORT:-}"
-CODEX_HOST_PORT="${AI_AGENT_CODEX_PORT:-1455}"
+FORWARD_PORTS=()
+
+if [[ -n "${AI_AGENT_FORWARD_PORT:-}" ]]; then
+    FORWARD_PORTS+=("$AI_AGENT_FORWARD_PORT")
+fi
 
 WORKSPACE="$(pwd -P)"
 
@@ -43,8 +47,7 @@ if [[ -t 0 && -t 1 ]]; then
 fi
 
 PUBLISH_SSH=0
-PUBLISH_CODEX=0
-CODEX_AUTH_ENABLED=1
+ENABLE_SSH=0
 VERBOSE="${AI_AGENT_VERBOSE:-0}"
 CREDENTIALS_DIR=""
 CREDENTIALS_READ_ONLY=0
@@ -134,20 +137,11 @@ Behavior:
       Codex defaults to --sandbox danger-full-access because the container
       provides the outer isolation boundary. Pass --sandbox or -s to override.
 
-      When no persisted Codex login exists, Codex mode automatically publishes:
-        container 22   -> an available host SSH port
-        container 1455 -> host port 1455
+  agent tunnel
+      Open the configured SSH tunnels to the running workspace container.
 
-      If ~/.agent-container/.codex/auth.json exists, authentication support is
-      disabled automatically because Codex can use the persisted login.
-
-      The launcher finds an available SSH host port starting at 2222.
-
-  agent codex-ssh
-      Open an SSH tunnel to the agent container publishing host port 1455.
-
-      The SSH host port is discovered from that container's port mapping.
-      Exits with an error if no running agent container publishes port 1455.
+      The SSH host port and forwarded ports are read from the container. Exits
+      with an error if the container was not created with --forward-port.
 
   agent claude
       Start Claude Code.
@@ -244,26 +238,22 @@ Options:
   --ssh-port PORT
       Host port to map to container SSH port 22.
 
-      This is only published automatically when running:
+      This is published when at least one --forward-port is supplied. If
+      omitted, the launcher chooses the first available port starting at 2222.
 
-        agent codex
+  --forward-port PORT
+      Forward a port from your computer through SSH to the container.
 
-      If omitted, the launcher chooses the first available port starting at
-      2222.
+      PORT forwards the same local and container port. LOCAL:CONTAINER uses a
+      different local port. This option can be repeated.
 
-  --codex-port PORT
-      Host port mapped to container port 1455.
+      Examples:
+        --forward-port 1455
+        --forward-port 8080:3000
 
-      Default:
-        1455
-
-      This port is only published automatically when running:
-
-        agent codex
-
-  --no-codex-auth
-      Disable Codex authentication support. Neither the SSH tunnel port nor
-      callback port 1455 is published, and sshd is not started.
+      The launcher starts sshd, publishes its SSH port on 127.0.0.1, and prints
+      the ssh command to run on your computer. The forwarded service ports are
+      carried inside the SSH connection and are not published by Docker.
 
   --credentials DIR
       Share credentials from a home-style profile directory, read-write.
@@ -311,15 +301,12 @@ Environment:
         agent-container:latest
 
   AI_AGENT_SSH_PORT
-      Preferred host SSH port for Codex mode.
+      Preferred host SSH port when --forward-port is used.
 
       If unset, the launcher automatically finds an available port.
 
-  AI_AGENT_CODEX_PORT
-      Host port for the Codex callback.
-
-      Default:
-        1455
+  AI_AGENT_FORWARD_PORT
+      One SSH-forwarded port, in PORT or LOCAL:CONTAINER form.
 
   AI_AGENT_VERBOSE
       Set to 1 to enable verbose command logging without passing --verbose.
@@ -370,6 +357,8 @@ Examples:
   agent --verbose -p 3000 claude
 
   agent --ssh-port 2222 codex
+
+  agent --forward-port 1455 codex
 
   agent --credentials "$HOME/.agent-credentials/work" codex
 
@@ -741,6 +730,29 @@ requested_ports_are_configured() {
     [[ ${#MISSING_PORTS[@]} -eq 0 ]]
 }
 
+requested_forwards_are_configured() {
+    local container="$1"
+    local configured expected ssh_binding
+
+    expected="$(IFS=,; echo "${FORWARD_PORTS[*]}")"
+    configured="$(run_docker inspect \
+        --format '{{index .Config.Labels "agent-forward-ports"}}' \
+        "$container")"
+    ssh_binding="$(run_docker inspect \
+        --format '{{with index .NetworkSettings.Ports "22/tcp"}}{{(index . 0).HostPort}}{{end}}' \
+        "$container")"
+
+    [[ "$configured" == "$expected" && -n "$ssh_binding" ]]
+}
+
+forwards_require_new_container() {
+    echo "This container is already created without the requested SSH forwards." >&2
+    echo "Delete it and start over with the forwarding option:" >&2
+    echo "  agent delete" >&2
+    echo "  agent --forward-port PORT [command...]" >&2
+    exit 1
+}
+
 ports_require_new_container() {
     echo "This container is already created, and its port configuration cannot be changed." >&2
     echo "It does not publish:" >&2
@@ -820,19 +832,14 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
 
-        --codex-port)
+        --forward-port)
             [[ $# -ge 2 ]] || {
-                echo "Missing value for --codex-port" >&2
+                echo "Missing value for --forward-port" >&2
                 exit 1
             }
 
-            CODEX_HOST_PORT="$2"
+            FORWARD_PORTS+=("$2")
             shift 2
-            ;;
-
-        --no-codex-auth)
-            CODEX_AUTH_ENABLED=0
-            shift
             ;;
 
         -v|--verbose)
@@ -889,6 +896,23 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+for forward_port in "${FORWARD_PORTS[@]}"; do
+    if [[ ! "$forward_port" =~ ^([0-9]+)(:([0-9]+))?$ ]]; then
+        echo "Invalid --forward-port value: $forward_port" >&2
+        echo "Expected PORT or LOCAL:CONTAINER." >&2
+        exit 1
+    fi
+
+    local_port="${BASH_REMATCH[1]}"
+    container_port="${BASH_REMATCH[3]:-${BASH_REMATCH[1]}}"
+    if (( 10#$local_port < 1 || 10#$local_port > 65535 \
+        || 10#$container_port < 1 || 10#$container_port > 65535 )); then
+        echo "Invalid --forward-port value: $forward_port" >&2
+        echo "Ports must be between 1 and 65535." >&2
+        exit 1
+    fi
+done
+
 # -----------------------------------------------------------------------------
 # Built-in commands
 # -----------------------------------------------------------------------------
@@ -938,34 +962,36 @@ if [[ ${#COMMAND[@]} -gt 0 ]]; then
             exit $?
             ;;
 
-        codex-ssh)
-            CODEX_SSH_PORT=""
+        tunnel)
+            container="$(require_running_container)"
+            SSH_TUNNEL_PORT="$(run_docker inspect \
+                --format '{{with index .NetworkSettings.Ports "22/tcp"}}{{(index . 0).HostPort}}{{end}}' \
+                "$container")"
+            FORWARD_PORT_LABEL="$(run_docker inspect \
+                --format '{{index .Config.Labels "agent-forward-ports"}}' \
+                "$container")"
 
-            while read -r container; do
-                [[ -n "$container" ]] || continue
-
-                CODEX_SSH_PORT="$(run_docker inspect \
-                    --format '{{with index .NetworkSettings.Ports "22/tcp"}}{{(index . 0).HostPort}}{{end}}' \
-                    "$container")"
-
-                if [[ -n "$CODEX_SSH_PORT" ]]; then
-                    break
-                fi
-            done < <(run_docker ps \
-                --filter "label=agent-container=true" \
-                --filter "publish=1455" \
-                --format '{{.ID}}')
-
-            if [[ -z "$CODEX_SSH_PORT" ]]; then
-                echo "No running agent container publishes host port 1455." >&2
+            if [[ -z "$SSH_TUNNEL_PORT" || -z "$FORWARD_PORT_LABEL" ]]; then
+                echo "The running workspace container has no SSH forwards." >&2
+                echo "Recreate it with: agent --forward-port PORT [command...]" >&2
                 exit 1
             fi
 
-            if [[ -f "${HOME}/.ssh/known_hosts" ]] && grep -Fq "[localhost]:${CODEX_SSH_PORT}" "${HOME}/.ssh/known_hosts"; then
-                ssh-keygen -R "[localhost]:${CODEX_SSH_PORT}"
+            if [[ -f "${HOME}/.ssh/known_hosts" ]] && grep -Fq "[localhost]:${SSH_TUNNEL_PORT}" "${HOME}/.ssh/known_hosts"; then
+                ssh-keygen -R "[localhost]:${SSH_TUNNEL_PORT}"
             fi
 
-            exec ssh -p "$CODEX_SSH_PORT" -L 1455:localhost:1455 agent@localhost
+            SSH_FORWARD_ARGS=()
+            IFS=',' read -r -a SAVED_FORWARD_PORTS <<< "$FORWARD_PORT_LABEL"
+            for port in "${SAVED_FORWARD_PORTS[@]}"; do
+                if [[ "$port" == *:* ]]; then
+                    SSH_FORWARD_ARGS+=(-L "${port%%:*}:localhost:${port##*:}")
+                else
+                    SSH_FORWARD_ARGS+=(-L "${port}:localhost:${port}")
+                fi
+            done
+
+            exec ssh -N -p "$SSH_TUNNEL_PORT" "${SSH_FORWARD_ARGS[@]}" agent@localhost
             ;;
 
         exec)
@@ -1103,6 +1129,11 @@ if [[ ${#COMMAND[@]} -gt 0 ]]; then
                     ports_require_new_container
                 fi
 
+                if [[ ${#FORWARD_PORTS[@]} -gt 0 ]] \
+                    && ! requested_forwards_are_configured "$container"; then
+                    forwards_require_new_container
+                fi
+
                 exec_docker exec \
                     "${IO_ARGS[@]}" \
                     --user agent \
@@ -1130,6 +1161,11 @@ if [[ ${#COMMAND[@]} -eq 0 ]]; then
         if [[ ${#EXTRA_PORTS[@]} -gt 0 ]] \
             && ! requested_ports_are_configured "$RUNNING_CONTAINER"; then
             ports_require_new_container
+        fi
+
+        if [[ ${#FORWARD_PORTS[@]} -gt 0 ]] \
+            && ! requested_forwards_are_configured "$RUNNING_CONTAINER"; then
+            forwards_require_new_container
         fi
 
         echo "Attaching to agent container $RUNNING_CONTAINER"
@@ -1177,6 +1213,11 @@ if [[ -n "$RUNNING_CONTAINER" ]]; then
         if ! requested_ports_are_configured "$RUNNING_CONTAINER"; then
             ports_require_new_container
         fi
+    fi
+
+    if [[ ${#FORWARD_PORTS[@]} -gt 0 ]] \
+        && ! requested_forwards_are_configured "$RUNNING_CONTAINER"; then
+        forwards_require_new_container
     fi
 
     echo "Use one of:"
@@ -1255,6 +1296,11 @@ if [[ -n "$EXISTING_CONTAINER" ]]; then
         ports_require_new_container
     fi
 
+    if [[ ${#FORWARD_PORTS[@]} -gt 0 ]] \
+        && ! requested_forwards_are_configured "$EXISTING_CONTAINER"; then
+        forwards_require_new_container
+    fi
+
     echo "Starting existing container $EXISTING_CONTAINER..."
     run_docker start "$EXISTING_CONTAINER" >/dev/null
     print_published_ports "$EXISTING_CONTAINER"
@@ -1296,10 +1342,6 @@ fi
 # -----------------------------------------------------------------------------
 
 if [[ ${#COMMAND[@]} -gt 0 && "${COMMAND[0]}" == "codex" ]]; then
-    if [[ -f "$AGENT_HOME/.codex/auth.json" ]]; then
-        CODEX_AUTH_ENABLED=0
-    fi
-
     CODEX_SANDBOX_CONFIGURED=0
 
     for arg in "${COMMAND[@]:1}"; do
@@ -1319,18 +1361,17 @@ if [[ ${#COMMAND[@]} -gt 0 && "${COMMAND[0]}" == "codex" ]]; then
         )
     fi
 
-    if [[ "$CODEX_AUTH_ENABLED" == 1 ]]; then
-        PUBLISH_SSH=1
-        PUBLISH_CODEX=1
-    fi
+fi
+
+if [[ ${#FORWARD_PORTS[@]} -gt 0 ]]; then
+    PUBLISH_SSH=1
+    ENABLE_SSH=1
 else
     PUBLISH_SSH=0
-    PUBLISH_CODEX=0
 fi
 
 if [[ ${#EXTRA_PORTS[@]} -eq 0 \
     && "$PUBLISH_SSH" == 0 \
-    && "$PUBLISH_CODEX" == 0 \
     && ! ( ${#COMMAND[@]} -gt 0 && "${COMMAND[0]}" == "ralph" ) ]]; then
     confirm_no_published_ports
 fi
@@ -1426,8 +1467,13 @@ RUN_ARGS=(
 
 RUN_ARGS+=("${CREDENTIAL_MOUNT_ARGS[@]}")
 
-if [[ "$CODEX_AUTH_ENABLED" == 0 ]]; then
-    RUN_ARGS+=(--env CODEX_AUTH_ENABLED=0)
+if [[ "$ENABLE_SSH" == 1 ]]; then
+    FORWARD_PORT_LABEL="$(IFS=,; echo "${FORWARD_PORTS[*]}")"
+    RUN_ARGS+=(
+        --label "agent-forward-ports=${FORWARD_PORT_LABEL}"
+        --env AGENT_SSH_ENABLED=1
+        --env "AGENT_FORWARD_PORTS=${FORWARD_PORT_LABEL}"
+    )
 fi
 
 # -----------------------------------------------------------------------------
@@ -1450,15 +1496,9 @@ if [[ "$PUBLISH_SSH" == 1 ]]; then
         --publish "127.0.0.1:${RESOLVED_SSH_HOST_PORT}:22"
     )
 
+    RUN_ARGS+=(--env "AGENT_SSH_HOST_PORT=${RESOLVED_SSH_HOST_PORT}")
+
     echo "  SSH:   localhost:${RESOLVED_SSH_HOST_PORT} -> container:22"
-fi
-
-if [[ "$PUBLISH_CODEX" == 1 ]]; then
-    PORT_ARGS+=(
-        --publish "127.0.0.1:${CODEX_HOST_PORT}:1455"
-    )
-
-    echo "  Codex: localhost:${CODEX_HOST_PORT} -> container:1455"
 fi
 
 for port in "${EXTRA_PORTS[@]}"; do

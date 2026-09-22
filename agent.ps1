@@ -51,20 +51,11 @@ Behavior:
       Codex defaults to --sandbox danger-full-access because the container
       provides the outer isolation boundary. Pass --sandbox or -s to override.
 
-      When no persisted Codex login exists, Codex mode automatically publishes:
-        container 22   -> an available host SSH port
-        container 1455 -> host port 1455
+  agent tunnel
+      Open the configured SSH tunnels to the running workspace container.
 
-      If ~/.agent-container/.codex/auth.json exists, authentication support is
-      disabled automatically because Codex can use the persisted login.
-
-      The launcher finds an available SSH host port starting at 2222.
-
-  agent codex-ssh
-      Open an SSH tunnel to the agent container publishing host port 1455.
-
-      The SSH host port is discovered from that container's port mapping.
-      Exits with an error if no running agent container publishes port 1455.
+      The SSH host port and forwarded ports are read from the container. Exits
+      with an error if the container was not created with --forward-port.
 
   agent claude
       Start Claude Code.
@@ -161,26 +152,22 @@ Options:
   --ssh-port PORT
       Host port to map to container SSH port 22.
 
-      This is only published automatically when running:
+      This is published when at least one --forward-port is supplied. If
+      omitted, the launcher chooses the first available port starting at 2222.
 
-        agent codex
+  --forward-port PORT
+      Forward a port from your computer through SSH to the container.
 
-      If omitted, the launcher chooses the first available port starting at
-      2222.
+      PORT forwards the same local and container port. LOCAL:CONTAINER uses a
+      different local port. This option can be repeated.
 
-  --codex-port PORT
-      Host port mapped to container port 1455.
+      Examples:
+        --forward-port 1455
+        --forward-port 8080:3000
 
-      Default:
-        1455
-
-      This port is only published automatically when running:
-
-        agent codex
-
-  --no-codex-auth
-      Disable Codex authentication support. Neither the SSH tunnel port nor
-      callback port 1455 is published, and sshd is not started.
+      The launcher starts sshd, publishes its SSH port on 127.0.0.1, and prints
+      the ssh command to run on your computer. The forwarded service ports are
+      carried inside the SSH connection and are not published by Docker.
 
   --credentials DIR
       Share credentials from a home-style profile directory, read-write.
@@ -226,15 +213,12 @@ Environment:
         agent-container:latest
 
   AI_AGENT_SSH_PORT
-      Preferred host SSH port for Codex mode.
+      Preferred host SSH port when --forward-port is used.
 
       If unset, the launcher automatically finds an available port.
 
-  AI_AGENT_CODEX_PORT
-      Host port for the Codex callback.
-
-      Default:
-        1455
+  AI_AGENT_FORWARD_PORT
+      One SSH-forwarded port, in PORT or LOCAL:CONTAINER form.
 
   AI_AGENT_VERBOSE
       Set to 1 to enable verbose command logging without passing --verbose.
@@ -285,6 +269,8 @@ Examples:
   agent --verbose -p 3000 claude
 
   agent --ssh-port 2222 codex
+
+  agent --forward-port 1455 codex
 
   agent --credentials "$HOME/.agent-credentials/work" codex
 
@@ -376,6 +362,30 @@ function Test-RequestedPortsConfigured {
     }
 
     return -not $script:MissingPorts.Count
+}
+
+function Test-RequestedForwardsConfigured {
+    param(
+        [string] $Container,
+        [string[]] $Ports
+    )
+
+    $expected = $Ports -join ','
+    $labelArguments = @('inspect', '--format', '{{index .Config.Labels "agent-forward-ports"}}', $Container)
+    Write-CommandLog $labelArguments
+    $configured = & docker @labelArguments
+    if ($LASTEXITCODE -ne 0) { throw "Unable to inspect container $Container." }
+
+    $sshArguments = @('inspect', '--format', '{{with index .NetworkSettings.Ports "22/tcp"}}{{(index . 0).HostPort}}{{end}}', $Container)
+    Write-CommandLog $sshArguments
+    $sshPort = & docker @sshArguments
+    if ($LASTEXITCODE -ne 0) { throw "Unable to inspect container $Container." }
+
+    return $configured -ceq $expected -and [bool] $sshPort
+}
+
+function Throw-ForwardsRequireNewContainer {
+    throw "This container is already created without the requested SSH forwards.`nDelete it and start over with the forwarding option:`n  agent delete`n  agent --forward-port PORT [command...]"
 }
 
 function Throw-PortsRequireNewContainer {
@@ -635,7 +645,6 @@ try {
     $script:Image = if ($env:AI_AGENT_IMAGE) { $env:AI_AGENT_IMAGE } else { 'agent-container:latest' }
     $script:VerboseLogging = $env:AI_AGENT_VERBOSE -eq '1'
     $script:SshHostPort = $env:AI_AGENT_SSH_PORT
-    $CodexHostPort = if ($env:AI_AGENT_CODEX_PORT) { $env:AI_AGENT_CODEX_PORT } else { '1455' }
     $script:Workspace = (Get-Item -LiteralPath (Get-Location).Path).FullName
     $sha256 = [System.Security.Cryptography.SHA256]::Create()
     $hashBytes = $sha256.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($script:Workspace))
@@ -646,12 +655,13 @@ try {
     $script:SessionsDir = Join-Path $script:AgentHome 'sessions'
 
     $ExtraPorts = [System.Collections.Generic.List[string]]::new()
+    $ForwardPorts = [System.Collections.Generic.List[string]]::new()
+    if ($env:AI_AGENT_FORWARD_PORT) { $ForwardPorts.Add($env:AI_AGENT_FORWARD_PORT) }
     $DockerRunArguments = [System.Collections.Generic.List[string]]::new()
     $Command = [System.Collections.Generic.List[string]]::new()
     $CredentialsDirectory = $null
     $CredentialsReadOnly = $false
     $CredentialsRequested = $false
-    $CodexAuthEnabled = $true
 
     for ($index = 0; $index -lt $Arguments.Count; $index++) {
         $argument = $Arguments[$index]
@@ -664,11 +674,10 @@ try {
                 if (++$index -ge $Arguments.Count) { throw 'Missing value for --ssh-port' }
                 $script:SshHostPort = $Arguments[$index]; continue
             }
-            '^--codex-port$' {
-                if (++$index -ge $Arguments.Count) { throw 'Missing value for --codex-port' }
-                $CodexHostPort = $Arguments[$index]; continue
+            '^--forward-port$' {
+                if (++$index -ge $Arguments.Count) { throw 'Missing value for --forward-port' }
+                $ForwardPorts.Add($Arguments[$index]); continue
             }
-            '^--no-codex-auth$' { $CodexAuthEnabled = $false; continue }
             '^(-v|--verbose)$' { $script:VerboseLogging = $true; continue }
             '^--credentials(-ro)?$' {
                 if (++$index -ge $Arguments.Count) { throw "Missing value for $argument" }
@@ -693,6 +702,18 @@ try {
             }
         }
         if ($Command.Count -gt 0 -or $argument -eq '--') { break }
+    }
+
+    foreach ($forwardPort in $ForwardPorts) {
+        if ($forwardPort -notmatch '^(\d+)(?::(\d+))?$') {
+            throw "Invalid --forward-port value: $forwardPort. Expected PORT or LOCAL:CONTAINER."
+        }
+        $localPort = [int] $Matches[1]
+        $containerPort = if ($Matches[2]) { [int] $Matches[2] } else { $localPort }
+        if ($localPort -lt 1 -or $localPort -gt 65535 -or
+            $containerPort -lt 1 -or $containerPort -gt 65535) {
+            throw "Invalid --forward-port value: $forwardPort. Ports must be between 1 and 65535."
+        }
     }
 
     $builtIn = if ($Command.Count) { $Command[0] } else { '' }
@@ -752,25 +773,31 @@ try {
         exit 0
     }
 
-    if ($builtIn -eq 'codex-ssh') {
+    if ($builtIn -eq 'tunnel') {
         if (-not (Get-Command ssh -ErrorAction SilentlyContinue)) {
             throw 'OpenSSH Client is required. Install it from Windows Optional Features.'
         }
-        $psArguments = @('ps', '--filter', 'label=agent-container=true', '--filter', 'publish=1455', '--format', '{{.ID}}')
-        Write-CommandLog $psArguments
-        $containers = & docker @psArguments
-        $sshPort = $null
-        foreach ($container in $containers) {
-            $inspectArguments = @('inspect', '--format', '{{with index .NetworkSettings.Ports "22/tcp"}}{{(index . 0).HostPort}}{{end}}', $container)
-            Write-CommandLog $inspectArguments
-            $sshPort = & docker @inspectArguments
-            if ($sshPort) { break }
+        $container = Get-RunningContainer
+        $inspectArguments = @('inspect', '--format', '{{with index .NetworkSettings.Ports "22/tcp"}}{{(index . 0).HostPort}}{{end}}', $container)
+        Write-CommandLog $inspectArguments
+        $sshPort = & docker @inspectArguments
+        $labelArguments = @('inspect', '--format', '{{index .Config.Labels "agent-forward-ports"}}', $container)
+        Write-CommandLog $labelArguments
+        $forwardPortLabel = & docker @labelArguments
+        if (-not $sshPort -or -not $forwardPortLabel) {
+            throw 'The running workspace container has no SSH forwards. Recreate it with: agent --forward-port PORT [command...]'
         }
-        if (-not $sshPort) { throw 'No running agent container publishes the Codex callback port.' }
         if (Get-Command ssh-keygen -ErrorAction SilentlyContinue) {
             & ssh-keygen -R "[localhost]:$sshPort" 2>$null | Out-Null
         }
-        & ssh -p $sshPort -L 1455:localhost:1455 agent@localhost
+        $sshArguments = @('-N', '-p', $sshPort)
+        foreach ($port in $forwardPortLabel -split ',') {
+            $parts = $port -split ':', 2
+            if ($parts.Count -eq 1) { $sshArguments += @('-L', "${port}:localhost:${port}") }
+            else { $sshArguments += @('-L', "$($parts[0]):localhost:$($parts[1])") }
+        }
+        $sshArguments += 'agent@localhost'
+        & ssh @sshArguments
         exit $LASTEXITCODE
     }
 
@@ -839,6 +866,9 @@ try {
             if ($ExtraPorts.Count -and -not (Test-RequestedPortsConfigured $ralphContainer $ExtraPorts)) {
                 Throw-PortsRequireNewContainer
             }
+            if ($ForwardPorts.Count -and -not (Test-RequestedForwardsConfigured $ralphContainer $ForwardPorts)) {
+                Throw-ForwardsRequireNewContainer
+            }
             $ralphArguments = @('exec', '--interactive')
             if (-not [Console]::IsInputRedirected -and -not [Console]::IsOutputRedirected) { $ralphArguments += '--tty' }
             $ralphArguments += @('--user', 'agent', '--env', 'HOME=/home/agent', '--workdir', '/workspace', $ralphContainer)
@@ -852,6 +882,9 @@ try {
         if ($CredentialsRequested) { throw 'Credential mounts require a new container. Run agent stop first.' }
         if ($ExtraPorts.Count -and -not (Test-RequestedPortsConfigured $runningContainer $ExtraPorts)) {
             Throw-PortsRequireNewContainer
+        }
+        if ($ForwardPorts.Count -and -not (Test-RequestedForwardsConfigured $runningContainer $ForwardPorts)) {
+            Throw-ForwardsRequireNewContainer
         }
         Write-Output "Attaching to agent container $runningContainer"
         $execArguments = @('exec', '--interactive')
@@ -867,6 +900,9 @@ try {
     if ($runningContainer) {
         if ($ExtraPorts.Count -and -not (Test-RequestedPortsConfigured $runningContainer $ExtraPorts)) {
             Throw-PortsRequireNewContainer
+        }
+        if ($ForwardPorts.Count -and -not (Test-RequestedForwardsConfigured $runningContainer $ForwardPorts)) {
+            Throw-ForwardsRequireNewContainer
         }
         throw "An agent container is already running for this workspace:`n  $script:Workspace`n`nContainer:`n  $runningContainer`n`nUse one of:`n  agent`n  agent exec <command>`n  agent root [command]`n  agent stop`n  agent delete"
     }
@@ -904,6 +940,9 @@ try {
         if ($ExtraPorts.Count -and -not (Test-RequestedPortsConfigured $existingContainer $ExtraPorts)) {
             Throw-PortsRequireNewContainer
         }
+        if ($ForwardPorts.Count -and -not (Test-RequestedForwardsConfigured $existingContainer $ForwardPorts)) {
+            Throw-ForwardsRequireNewContainer
+        }
         Write-Output "Starting existing container $existingContainer..."
         Write-CommandLog @('start', $existingContainer)
         & docker start $existingContainer | Out-Null
@@ -932,11 +971,7 @@ try {
     }
 
     $PublishSsh = $false
-    $PublishCodex = $false
     if ($Command.Count -and $Command[0] -eq 'codex') {
-        if (Test-Path -LiteralPath (Join-Path $script:AgentHome '.codex/auth.json') -PathType Leaf) {
-            $CodexAuthEnabled = $false
-        }
         $sandboxConfigured = $false
         foreach ($argument in @($Command | Select-Object -Skip 1)) {
             if ($argument -eq '--sandbox' -or $argument -eq '-s' -or $argument -like '--sandbox=*' -or
@@ -949,10 +984,11 @@ try {
             $Command = [System.Collections.Generic.List[string]]::new()
             @('codex', '--sandbox', 'danger-full-access') + $remainingCommand | ForEach-Object { $Command.Add($_) }
         }
-        if ($CodexAuthEnabled) { $PublishSsh = $true; $PublishCodex = $true }
     }
 
-    if (-not $ExtraPorts.Count -and -not $PublishSsh -and -not $PublishCodex -and $builtIn -ne 'ralph') {
+    if ($ForwardPorts.Count) { $PublishSsh = $true }
+
+    if (-not $ExtraPorts.Count -and -not $PublishSsh -and $builtIn -ne 'ralph') {
         Confirm-NoPublishedPorts
     }
 
@@ -1035,7 +1071,14 @@ try {
     }
 
     $CredentialMountArguments | ForEach-Object { $runArguments.Add($_) }
-    if (-not $CodexAuthEnabled) { @('--env', 'CODEX_AUTH_ENABLED=0') | ForEach-Object { $runArguments.Add($_) } }
+    if ($ForwardPorts.Count) {
+        $forwardPortLabel = $ForwardPorts -join ','
+        @(
+            '--label', "agent-forward-ports=$forwardPortLabel",
+            '--env', 'AGENT_SSH_ENABLED=1',
+            '--env', "AGENT_FORWARD_PORTS=$forwardPortLabel"
+        ) | ForEach-Object { $runArguments.Add($_) }
+    }
 
     Write-VerboseNote "workspace:      $script:Workspace"
     Write-VerboseNote "workspace id:   $script:WorkspaceId"
@@ -1048,12 +1091,8 @@ try {
     if ($PublishSsh) {
         $resolvedSshPort = Get-SshPort
         @('--publish', "127.0.0.1:${resolvedSshPort}:22") | ForEach-Object { $runArguments.Add($_) }
+        @('--env', "AGENT_SSH_HOST_PORT=$resolvedSshPort") | ForEach-Object { $runArguments.Add($_) }
         Write-Output "  SSH:   localhost:$resolvedSshPort -> container:22"
-        $publishedPortCount++
-    }
-    if ($PublishCodex) {
-        @('--publish', "127.0.0.1:${CodexHostPort}:1455") | ForEach-Object { $runArguments.Add($_) }
-        Write-Output "  Codex: localhost:$CodexHostPort -> container:1455"
         $publishedPortCount++
     }
     foreach ($port in $ExtraPorts) {

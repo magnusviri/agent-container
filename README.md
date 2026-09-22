@@ -122,7 +122,7 @@ Linux) or `shasum` (included with macOS). Automatic SSH-port selection requires
 one of `lsof`, `ss`, or `nc` on those hosts.
 
 Windows hosts need Windows PowerShell 5.1 or PowerShell 7 and Git. The optional
-`agent codex-ssh` command also needs the Windows OpenSSH Client feature; current
+`agent tunnel` command also needs the Windows OpenSSH Client feature; current
 Windows installations normally include it.
 
 ## Installation
@@ -283,11 +283,10 @@ The same default applies inside the container. Interactive container shells
 define a `codex` wrapper, so typing `codex` in a shell behaves like
 `agent codex`. Passing an explicit `--sandbox` option still overrides it.
 
-When Codex requires authentication, select the ChatGPT sign-in option and open
-the URL it displays. The launcher maps the callback listener to
-`127.0.0.1:1455` on the host, so the browser can complete a normal local login.
-See [Codex authentication](#codex-authentication) for the port and SSH-tunnel
-details.
+When Codex requires browser authentication, start it with
+`agent --forward-port 1455 codex`. See
+[SSH port forwarding](#ssh-port-forwarding) for the full login flow. A normal
+`agent codex` no longer starts an SSH server or publishes authentication ports.
 
 ### Claude Code
 
@@ -534,9 +533,9 @@ Agent container is running:
   Ports:
 ```
 
-When running `agent codex` with authentication support enabled, the ports
-section shows the published SSH and Codex callback mappings, for example
-`127.0.0.1:2222->22/tcp, 127.0.0.1:1455->1455/tcp`.
+When a container is created with `--forward-port`, the ports section shows its
+SSH mapping, for example `127.0.0.1:2222->22/tcp`. Forwarded service ports
+travel inside that SSH connection and are not published by Docker.
 
 ## Listing containers
 
@@ -697,9 +696,10 @@ The included `.gitignore` uses these rules:
 
 ## Ports
 
-No ports are published by default for a normal shell, Claude Code, or OpenCode.
-When creating a container without any published ports, the launcher asks for
-confirmation because ports cannot be added after the container is created.
+No ports are published by default for a normal shell, Codex, Claude Code, or
+OpenCode. When creating a container without any published ports, the launcher
+asks for confirmation because ports cannot be added after the container is
+created.
 
 For example:
 
@@ -717,25 +717,24 @@ agent opencode
 
 publish no ports unless explicitly requested (see below).
 
-### Codex ports
+### SSH-forwarded ports
 
 When running:
 
 ```bash
-agent codex
+agent --forward-port 1455 codex
 ```
 
-the launcher automatically starts `sshd` and publishes ports when
-`~/.agent-container/.codex/auth.json` does not exist:
+the launcher starts `sshd` and publishes its SSH endpoint:
 
 ```text
 host 2222 -> container 22
-host 1455 -> container 1455
 ```
 
-Both automatic mappings bind to `127.0.0.1`, so they are reachable only from
-the Docker host. Pass `--no-codex-auth` to disable this behavior. See
-[Codex authentication](#codex-authentication) below for more information.
+The mapping binds to `127.0.0.1`, so it is reachable only from the Docker host.
+The requested port is carried inside SSH rather than published by Docker.
+`--forward-port` works with any command and can be repeated. See
+[SSH port forwarding](#ssh-port-forwarding) below for more information.
 
 ## Opening custom ports
 
@@ -1036,8 +1035,8 @@ This keeps `/root` and other system locations out of reach of the coding
 agents. The tools can still read and write everything under `/workspace`
 (eventually) and their own state under `/home/agent`.
 
-Only the `sshd` daemon that powers Codex authentication runs as `root`; it is
-started in codex mode because binding the SSH service and managing logins
+Only the optional `sshd` daemon runs as `root`; it is started when
+`--forward-port` is used because binding the SSH service and managing logins
 require those privileges. The SSH login itself runs as `agent`, and root login
 over SSH is disabled.
 
@@ -1078,7 +1077,13 @@ Persistent agent state may contain sensitive tokens. Keep these directories priv
 Only the shared instruction files in these directories are managed by Git; all
 other contents are ignored.
 
-## Codex authentication
+## SSH port forwarding
+
+Some command-line services authenticate in a browser and redirect it to a
+listener on `localhost` inside the container. `--forward-port` creates a
+generic SSH tunnel for that callback; it is not tied to Codex.
+
+### Codex example
 
 When Codex first starts it displays this message.
 
@@ -1098,30 +1103,32 @@ When Codex first starts it displays this message.
      Pay for what you use
 ```
 
-I don't have a Device Code or API key, but I can sign in with ChatGPT. If I choose "Sign
-in with ChatGPT", it displays a link to open in my web browser. After opening the page
-and singing in, it tries to open localhost:1455, which goes nowhere. To fix that, I
-needed to use ssh tunneling. This is how it works.
+Choosing "Sign in with ChatGPT" displays a link to open in a web browser. After
+sign-in, the browser redirects to localhost port 1455. Start Codex with that
+port forwarded:
 
-The container starts `sshd` when the container is launched with `agent codex` and
-`~/.agent-container/.codex/auth.json` does not exist. Passing `--no-codex-auth`, prevents
-`sshd` from starting.
+```bash
+agent --forward-port 1455 codex
+```
 
-The password for the tunnel is random and printed when the container starts. You might
-have to scroll the Terminal window because codex clears the screen.
+The container starts `sshd` whenever `--forward-port` is present. The password
+and the command to run on your computer are printed when the container starts.
+You might have to scroll because the service can clear the screen.
 
 ```
 SSH:   localhost:2222 -> container:22
-Codex: localhost:1455 -> container:1455
 
 ============================================================
  SSH credentials (randomly generated)
 ------------------------------------------------------------
- User:     agent
- Password: j2zWKDiDmkw6fWamemvoIb4iaGaQju9HF25nVuGZKAc
- Port:     22
+ User:      agent
+ Password:  j2zWKDiDmkw6fWamemvoIb4iaGaQju9HF25nVuGZKAc
+ Host port: 2222
 ============================================================
 
+Run this command in another terminal on your computer:
+
+  ssh -N -p 2222 -L 1455:localhost:1455 agent@localhost
 
              _._:=++==+,_
          _=,/*\+/+\=||=_ _"+_
@@ -1146,17 +1153,20 @@ Codex: localhost:1455 -> container:1455
   or connect an API key for usage-based billing
 ```
 
-Then, in another terminal, run:
+Run the printed command in another terminal on the Docker host, enter the
+printed password, and leave it running while completing browser authentication.
+
+Instead of copying the printed command, you can run this on the Docker host:
 
 ```bash
-agent codex-ssh
+agent tunnel
 ```
 
-This finds the running agent container that publishes host port 1455, removes
-any saved host key for the discovered SSH port, and opens the tunnel. It exits
-with an error if no such container is running.
+This finds the running workspace container, reads its configured forwarded
+ports, removes any saved host key for the discovered SSH port, and opens the
+tunnel. It exits with an error if the container has no configured forwards.
 
-If the tunnel reports a changed host key, `agent codex-ssh` automatically
+If the tunnel reports a changed host key, `agent tunnel` automatically
 removes the saved key for the discovered SSH port before connecting. If you
 need to reset it manually, use the SSH port mapped to container port 22 (for
 example, `2222`):
@@ -1178,16 +1188,15 @@ SSH host keys are generated during the image build, so containers created from
 one image share an SSH server identity. Rebuilding the image without its cached
 SSH-key layer can generate a new identity.
 
-Credentials persist in `~/.agent-container/.codex`. On later runs the launcher
-detects `auth.json`, does not publish either authentication port, and does not
-start `sshd`.
+Codex credentials persist in `~/.agent-container/.codex`. Once authentication
+is complete, later sessions can normally use `agent codex` without a forward.
 
 ## Custom SSH port
 
 Specify the desired host SSH port:
 
 ```bash
-agent --ssh-port 2200 codex
+agent --ssh-port 2200 --forward-port 1455 codex
 ```
 
 This maps:
@@ -1202,42 +1211,34 @@ You can also set:
 export AI_AGENT_SSH_PORT=2200
 ```
 
-## Custom Codex callback port
+## Forwarding other ports
 
-The default host callback port is:
-
-```text
-1455
-```
-
-Override it with:
+The short form uses the same port on your computer and in the container:
 
 ```bash
-agent --codex-port 1456 codex
+agent --forward-port 1455 codex
 ```
 
-or:
+Use `LOCAL:CONTAINER` when the two ports should differ:
 
 ```bash
-export AI_AGENT_CODEX_PORT=1456
+agent --forward-port 8080:3000 some-command
 ```
 
-The container-side port remains `1455`.
-
-Because Codex redirects the browser to local port 1455, changing the host port
-is mainly useful when reserving port 1455 for the SSH-tunnel method described
-above.
-
-## Disable Codex authentication support
-
-Disable the SSH endpoint, callback port, and `sshd` startup:
+The option can be repeated for a service that needs more than one port:
 
 ```bash
-agent --no-codex-auth codex
+agent --forward-port 8000 --forward-port 9000 some-command
 ```
 
-This is also the automatic behavior when
-`~/.agent-container/.codex/auth.json` exists.
+The equivalent environment setting supports one forward:
+
+```bash
+export AI_AGENT_FORWARD_PORT=1455
+agent codex
+```
+
+Without `--forward-port` or `AI_AGENT_FORWARD_PORT`, `sshd` is not started.
 
 ## Docker access
 
@@ -1345,7 +1346,7 @@ export AI_AGENT_IMAGE=my-company-agent:latest
 
 ### `AI_AGENT_SSH_PORT`
 
-Sets the preferred host SSH port for Codex mode.
+Sets the preferred host SSH port when forwarding is enabled.
 
 Example:
 
@@ -1353,20 +1354,14 @@ Example:
 export AI_AGENT_SSH_PORT=2222
 ```
 
-### `AI_AGENT_CODEX_PORT`
+### `AI_AGENT_FORWARD_PORT`
 
-Sets the host-side Codex callback port.
-
-Default:
-
-```text
-1455
-```
+Configures one SSH-forwarded port in `PORT` or `LOCAL:CONTAINER` form.
 
 Example:
 
 ```bash
-export AI_AGENT_CODEX_PORT=1456
+export AI_AGENT_FORWARD_PORT=1455
 ```
 
 ### `AI_AGENT_VERBOSE`

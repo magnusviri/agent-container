@@ -7,11 +7,7 @@ if ! AGENT_USER="$AGENT_USER" /usr/local/bin/agent-config-audit; then
   echo "Warning: unable to audit external configuration paths." >&2
 fi
 
-if [[ $# -eq 0 ]]; then
-  exec gosu "$AGENT_USER" bash
-fi
-
-if [[ "$1" == "codex" && "${CODEX_AUTH_ENABLED:-1}" == 1 ]]; then
+if [[ "${AGENT_SSH_ENABLED:-0}" == 1 ]]; then
   if [[ -n "${AGENT_SSH_PASSWORD:-}" ]]; then
     SSH_PASSWORD="$AGENT_SSH_PASSWORD"
     PASSWORD_SOURCE="provided by AGENT_SSH_PASSWORD"
@@ -35,15 +31,35 @@ if [[ "$1" == "codex" && "${CODEX_AUTH_ENABLED:-1}" == 1 ]]; then
   echo "============================================================"
   echo " SSH credentials (${PASSWORD_SOURCE})"
   echo "------------------------------------------------------------"
-  echo " User:     ${AGENT_USER}"
-  echo " Password: ${SSH_PASSWORD}"
-  echo " Port:     22"
+  echo " User:      ${AGENT_USER}"
+  echo " Password:  ${SSH_PASSWORD}"
+  echo " Host port: ${AGENT_SSH_HOST_PORT:-22}"
   echo "============================================================"
   echo
+
+  if [[ -n "${AGENT_SSH_HOST_PORT:-}" && -n "${AGENT_FORWARD_PORTS:-}" ]]; then
+    SSH_FORWARD_ARGS=()
+    IFS=',' read -r -a FORWARD_PORTS <<< "$AGENT_FORWARD_PORTS"
+    for port in "${FORWARD_PORTS[@]}"; do
+      if [[ "$port" == *:* ]]; then
+        SSH_FORWARD_ARGS+=("-L" "${port%%:*}:localhost:${port##*:}")
+      else
+        SSH_FORWARD_ARGS+=("-L" "${port}:localhost:${port}")
+      fi
+    done
+
+    printf 'Run this command in another terminal on your computer:\n\n  ssh -N -p %q' "$AGENT_SSH_HOST_PORT"
+    printf ' %q' "${SSH_FORWARD_ARGS[@]}"
+    printf ' agent@localhost\n\n'
+  fi
 
   mkdir -p /run/sshd
   /usr/sbin/sshd
   unset SSH_PASSWORD AGENT_SSH_PASSWORD ROOT_PASSWORD
+fi
+
+if [[ $# -eq 0 ]]; then
+  exec gosu "$AGENT_USER" bash
 fi
 
 case "$1" in
