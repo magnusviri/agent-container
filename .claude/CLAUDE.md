@@ -1,1 +1,1 @@
-../.codex/AGENTS.md
+/usr/local/share/agent-container/AGENTS.md

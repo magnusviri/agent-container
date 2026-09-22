@@ -360,7 +360,7 @@ rules. A suitable prompt is:
 ```text
 Inspect this repository and create /workspace/tasks.json for Ralph to
 implement: <describe the feature>. Follow the "Creating Ralph tasks.json"
-instructions in /usr/local/share/agent-container/AGENTS-CONTAINER.md. Do not
+instructions in /usr/local/share/agent-container/AGENTS.md. Do not
 implement the tasks.
 ```
 
@@ -574,6 +574,12 @@ Persistent AI-agent state is stored on the host and is not removed.
 The agent configuration and state directories are mounted into every agent
 container.
 
+Whenever a container starts, `agent-config-audit` checks `~/.config`,
+`~/.claude`, and `~/.codex` and prints the mount boundaries whose contents
+come from outside the container image. This includes the persistent agent state
+mounts described below and optional nested credential mounts such as
+`~/.config/gh`. The audit prints paths and mount sources, not file contents.
+
 ### Codex
 
 ```text
@@ -586,8 +592,8 @@ is mounted at:
 /home/agent/.codex
 ```
 
-The repository-managed `AGENTS.md` in this directory contains the shared
-container instructions.
+Its `AGENTS.md` is a symbolic link to the shared container instructions at
+`/usr/local/share/agent-container/AGENTS.md`.
 
 ### Claude Code
 
@@ -601,7 +607,8 @@ is mounted at:
 /home/agent/.claude
 ```
 
-Its `CLAUDE.md` is a symbolic link to `.codex/AGENTS.md`.
+Its `CLAUDE.md` is a symbolic link to the shared container instructions at
+`/usr/local/share/agent-container/AGENTS.md`.
 
 By default Claude Code splits its state between `~/.claude` and a separate
 `~/.claude.json` file in the home directory. That file holds the signed-in
@@ -636,7 +643,8 @@ is mounted at:
 /home/agent/.config/opencode
 ```
 
-Its `AGENTS.md` is a symbolic link to `../../.codex/AGENTS.md`.
+Its `AGENTS.md` is a symbolic link to the shared container instructions at
+`/usr/local/share/agent-container/AGENTS.md`.
 
 OpenCode's application data directory:
 
@@ -928,6 +936,7 @@ The default installation location is:
 ├── agent.cmd
 ├── agent.ps1
 ├── agent-entrypoint
+├── agent-config-audit
 ├── ralph
 ├── AGENTS-CONTAINER.md
 ├── README.md
@@ -935,23 +944,23 @@ The default installation location is:
 ├── .gitignore
 │
 ├── .codex/
-│   └── AGENTS.md
+│   └── AGENTS.md -> /usr/local/share/agent-container/AGENTS.md
 ├── .claude/
-│   └── CLAUDE.md -> ../.codex/AGENTS.md
+│   └── CLAUDE.md -> /usr/local/share/agent-container/AGENTS.md
 ├── AGENTS-RALPH.md
 ├── .config/
 │   └── opencode/
-│       └── AGENTS.md -> ../../.codex/AGENTS.md
+│       └── AGENTS.md -> /usr/local/share/agent-container/AGENTS.md
 └── .local/
     └── share/
         └── opencode/ (runtime data, created automatically)
 ```
 
 The agent configuration directories are managed by Git so they can provide the
-same instructions to each tool. `.codex/AGENTS.md` is the canonical file;
-Claude Code's `CLAUDE.md` and OpenCode's `AGENTS.md` are relative symbolic
-links to it. All other configuration and runtime files in these directories are
-ignored.
+same instructions to each tool. The canonical file is installed in the image
+at `/usr/local/share/agent-container/AGENTS.md`; Codex's `AGENTS.md`, Claude
+Code's `CLAUDE.md`, and OpenCode's `AGENTS.md` are symbolic links to it. All
+other configuration and runtime files in these directories are ignored.
 
 ## Version configuration
 

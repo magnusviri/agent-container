@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+AGENT_USER="${AGENT_USER:-agent}"
+AGENT_HOME="${AGENT_HOME:-/home/${AGENT_USER}}"
+
+SCAN_ROOTS=(
+    "$AGENT_HOME/.config"
+    "$AGENT_HOME/.claude"
+    "$AGENT_HOME/.codex"
+)
+
+declare -A REPORTED_TARGETS=()
+EXTERNAL_TARGETS=()
+EXTERNAL_SOURCES=()
+EXTERNAL_FILESYSTEMS=()
+
+record_mount() {
+    local target="$1"
+    local source="$2"
+    local filesystem="$3"
+
+    [[ "$target" != / ]] || return 0
+    [[ -z "${REPORTED_TARGETS[$target]+set}" ]] || return 0
+
+    REPORTED_TARGETS["$target"]=1
+    EXTERNAL_TARGETS+=("$target")
+    EXTERNAL_SOURCES+=("$source")
+    EXTERNAL_FILESYSTEMS+=("$filesystem")
+}
+
+for root in "${SCAN_ROOTS[@]}"; do
+    [[ -d "$root" ]] || continue
+
+    # A scan root may itself be inside a broader mount (for example, when a
+    # caller mounts all of /home/agent), so query the filesystem that contains
+    # it in addition to looking for mount points beneath it.
+    if mount_record="$(findmnt --noheadings --output TARGET,SOURCE,FSTYPE --target "$root" 2>/dev/null)"; then
+        read -r target source filesystem <<< "$mount_record"
+        if [[ "$target" != / ]]; then
+            record_mount "$root" "$source" "$filesystem"
+        fi
+    fi
+
+    while read -r target source filesystem; do
+        case "$target" in
+            "$root"|"$root"/*)
+                record_mount "$target" "$source" "$filesystem"
+                ;;
+        esac
+    done < <(findmnt --raw --noheadings --output TARGET,SOURCE,FSTYPE)
+done
+
+echo
+echo "Configuration paths outside the container image:"
+
+if [[ ${#EXTERNAL_TARGETS[@]} -eq 0 ]]; then
+    echo "  (none)"
+else
+    for index in "${!EXTERNAL_TARGETS[@]}"; do
+        display_target="${EXTERNAL_TARGETS[$index]/#${AGENT_HOME}/\~}"
+        printf '  %s <- %s (%s)\n' \
+            "$display_target" \
+            "${EXTERNAL_SOURCES[$index]}" \
+            "${EXTERNAL_FILESYSTEMS[$index]}"
+    done
+    echo "  All contents below a listed directory come from that mount."
+fi
+
+echo

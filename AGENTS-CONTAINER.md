@@ -88,7 +88,7 @@ Use this prompt, replacing the placeholder with the desired feature:
 ```text
 Inspect this repository and create /workspace/tasks.json for Ralph to
 implement: <describe the feature>. Follow the "Creating Ralph tasks.json"
-instructions in /usr/local/share/agent-container/AGENTS-CONTAINER.md. Do not
+instructions in /usr/local/share/agent-container/AGENTS.md. Do not
 implement the tasks.
 ```
 

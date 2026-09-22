@@ -3,6 +3,10 @@ set -euo pipefail
 
 AGENT_USER=agent
 
+if ! AGENT_USER="$AGENT_USER" /usr/local/bin/agent-config-audit; then
+  echo "Warning: unable to audit external configuration paths." >&2
+fi
+
 if [[ $# -eq 0 ]]; then
   exec gosu "$AGENT_USER" bash
 fi

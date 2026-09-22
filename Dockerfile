@@ -203,6 +203,7 @@ RUN mkdir -p \
       /home/agent/.config/opencode \
       /home/agent/.local/share/opencode \
       /workspace \
+    && printf '\nexport PATH="$HOME/.local/bin:$PATH"\n' >> /home/agent/.bashrc \
     && chmod 700 /home/agent/.ssh \
     && chown -R agent:agent /home/agent \
     && chown agent:agent /workspace \
@@ -210,13 +211,17 @@ RUN mkdir -p \
     && printf '\nPermitRootLogin no\nPasswordAuthentication yes\n' >> /etc/ssh/sshd_config \
     && /usr/sbin/sshd -t
 
-COPY agent-entrypoint ralph /usr/local/bin/
+COPY agent-entrypoint agent-config-audit ralph /usr/local/bin/
 COPY AGENTS-RALPH.md /usr/local/share/ralph/AGENTS-RALPH.md
-COPY AGENTS-CONTAINER.md /usr/local/share/agent-container/AGENTS-CONTAINER.md
-RUN chmod 0755 /usr/local/bin/agent-entrypoint /usr/local/bin/ralph
+COPY AGENTS-CONTAINER.md /usr/local/share/agent-container/AGENTS.md
+RUN chmod 0755 \
+      /usr/local/bin/agent-entrypoint \
+      /usr/local/bin/agent-config-audit \
+      /usr/local/bin/ralph
 
 RUN set -eux; \
     test -x /usr/sbin/chpasswd; \
+    agent-config-audit >/dev/null; \
     python --version; \
     pip --version; \
     ruby --version; \

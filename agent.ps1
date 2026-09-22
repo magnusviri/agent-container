@@ -1011,18 +1011,25 @@ try {
     ) | ForEach-Object { $runArguments.Add($_) }
 
     # Git for Windows may check symlinks out as files containing only their
-    # target. Overlay the canonical instructions in that case without changing
-    # the host checkout.
-    $canonicalInstructions = Join-Path $script:AgentHome '.codex/AGENTS.md'
+    # target. Overlay the image instruction source in that case without
+    # changing the host checkout. Linux containers use the tracked symlinks to
+    # the canonical file installed in the image.
+    $canonicalInstructions = Join-Path $script:AgentHome 'AGENTS-CONTAINER.md'
+    $codexInstructions = Join-Path $script:AgentHome '.codex/AGENTS.md'
     $claudeInstructions = Join-Path $script:AgentHome '.claude/CLAUDE.md'
     $openCodeInstructions = Join-Path $script:AgentHome '.config/opencode/AGENTS.md'
     if ((Test-Path -LiteralPath $canonicalInstructions -PathType Leaf) -and
-        (Test-GitSymlinkPlaceholder $claudeInstructions '../.codex/AGENTS.md')) {
+        (Test-GitSymlinkPlaceholder $codexInstructions '/usr/local/share/agent-container/AGENTS.md')) {
+        @('--volume', "${canonicalInstructions}:/home/agent/.codex/AGENTS.md:ro") |
+            ForEach-Object { $runArguments.Add($_) }
+    }
+    if ((Test-Path -LiteralPath $canonicalInstructions -PathType Leaf) -and
+        (Test-GitSymlinkPlaceholder $claudeInstructions '/usr/local/share/agent-container/AGENTS.md')) {
         @('--volume', "${canonicalInstructions}:/home/agent/.claude/CLAUDE.md:ro") |
             ForEach-Object { $runArguments.Add($_) }
     }
     if ((Test-Path -LiteralPath $canonicalInstructions -PathType Leaf) -and
-        (Test-GitSymlinkPlaceholder $openCodeInstructions '../../.codex/AGENTS.md')) {
+        (Test-GitSymlinkPlaceholder $openCodeInstructions '/usr/local/share/agent-container/AGENTS.md')) {
         @('--volume', "${canonicalInstructions}:/home/agent/.config/opencode/AGENTS.md:ro") |
             ForEach-Object { $runArguments.Add($_) }
     }
