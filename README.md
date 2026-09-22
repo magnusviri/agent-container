@@ -72,6 +72,8 @@ find
 file
 tree
 less
+vim
+micro
 
 gcc
 g++

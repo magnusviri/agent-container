@@ -44,6 +44,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     procps \
     file \
     less \
+    vim \
     tree \
     locales \
     git \
@@ -143,6 +144,11 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | UV_NO_MODIFY_PATH=1 sh \
     && install -m 0755 /root/.local/bin/uv /usr/local/bin/uv \
     && rm -rf /root/.local
 
+RUN cd /tmp \
+    && curl -fsSL https://getmic.ro | bash \
+    && install -m 0755 micro /usr/local/bin/micro \
+    && rm micro
+
 RUN useradd -m -s /bin/bash agent
 
 WORKDIR /workspace
@@ -241,6 +247,8 @@ RUN set -eux; \
     rg --version; \
     jq --version; \
     minify --version; \
+    vim --version; \
+    micro --version; \
     ansible --version; \
     shellcheck --version; \
     shfmt --version; \
