@@ -38,6 +38,9 @@ it. And then I pointed this very agent-container at it's own repo and now look a
 It absolutely blew up in complexity and functionality. That is what I call recursive
 improvement._
 
+Extra side note: I have not tested the Windows or Claude functionality. It should work,
+but I wouldn't be surprised if there are errors.
+
 ## Features
 
 The image includes common coding-agent utilities such as:
