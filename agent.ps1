@@ -651,7 +651,13 @@ try {
     $sha256.Dispose()
     $script:WorkspaceId = -join ($hashBytes | ForEach-Object { $_.ToString('x2') })
     $script:WorkspaceId = $script:WorkspaceId.Substring(0, 12)
-    $ContainerName = "agent-$($script:WorkspaceId)"
+    $workspaceName = [string](Split-Path -Leaf $script:Workspace)
+    $workspaceName = $workspaceName.ToLowerInvariant() -replace '[^a-z0-9]+', '-'
+    $workspaceName = $workspaceName.Trim('-')
+    if ($workspaceName.Length -gt 50) { $workspaceName = $workspaceName.Substring(0, 50).TrimEnd('-') }
+    if (-not $workspaceName) { $workspaceName = 'workspace' }
+    $ContainerHostname = "$workspaceName-$($script:WorkspaceId)"
+    $ContainerName = "agent-$ContainerHostname"
     $script:SessionsDir = Join-Path $script:AgentHome 'sessions'
 
     $ExtraPorts = [System.Collections.Generic.List[string]]::new()
@@ -1030,7 +1036,7 @@ try {
     @('run', '--interactive') | ForEach-Object { $runArguments.Add($_) }
     if (-not [Console]::IsInputRedirected -and -not [Console]::IsOutputRedirected) { $runArguments.Add('--tty') }
     @(
-        '--init', '--name', $ContainerName,
+        '--init', '--name', $ContainerName, '--hostname', $ContainerHostname,
         '--label', 'agent-container=true',
         '--label', "agent-workspace=$($script:WorkspaceId)",
         '--label', "agent-workspace-path=$($script:Workspace)",
@@ -1083,6 +1089,7 @@ try {
     Write-VerboseNote "workspace:      $script:Workspace"
     Write-VerboseNote "workspace id:   $script:WorkspaceId"
     Write-VerboseNote "container name: $ContainerName"
+    Write-VerboseNote "hostname:       $ContainerHostname"
     Write-VerboseNote "image:          $script:Image"
     Write-VerboseNote "requested ports: $(if ($ExtraPorts.Count) { $ExtraPorts -join ' ' } else { 'none' })"
 

@@ -30,7 +30,20 @@ WORKSPACE_ID="$(
         | cut -c1-12
 )"
 
-CONTAINER_NAME="agent-${WORKSPACE_ID}"
+WORKSPACE_NAME="$(
+    basename "$WORKSPACE" \
+        | LC_ALL=C tr '[:upper:]' '[:lower:]' \
+        | LC_ALL=C sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//' \
+        | cut -c1-50 \
+        | sed -E 's/-+$//'
+)"
+
+if [[ -z "$WORKSPACE_NAME" ]]; then
+    WORKSPACE_NAME="workspace"
+fi
+
+CONTAINER_HOSTNAME="${WORKSPACE_NAME}-${WORKSPACE_ID}"
+CONTAINER_NAME="agent-${CONTAINER_HOSTNAME}"
 
 SESSIONS_DIR="$AGENT_HOME/sessions"
 
@@ -1445,6 +1458,7 @@ RUN_ARGS=(
     --init
 
     --name "$CONTAINER_NAME"
+    --hostname "$CONTAINER_HOSTNAME"
 
     --label "agent-container=true"
     --label "agent-workspace=${WORKSPACE_ID}"
@@ -1483,6 +1497,7 @@ fi
 log_verbose "workspace:      $WORKSPACE"
 log_verbose "workspace id:   $WORKSPACE_ID"
 log_verbose "container name: $CONTAINER_NAME"
+log_verbose "hostname:       $CONTAINER_HOSTNAME"
 log_verbose "image:          $IMAGE"
 log_verbose "requested ports: ${EXTRA_PORTS[*]:-none}"
 

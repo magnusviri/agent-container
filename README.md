@@ -521,6 +521,13 @@ container.
 
 ## Container status
 
+New containers use the workspace directory name plus the first 12 characters
+of the absolute workspace path's SHA-256 hash. For `/home/me/project-a`, the
+container is named `agent-project-a-<hash>` and its hostname is
+`project-a-<hash>`. The directory name is lowercased, unsupported characters
+are replaced with hyphens, and long names are shortened to keep the hostname
+valid.
+
 Check whether a container is running for the current workspace:
 
 ```bash
@@ -532,7 +539,7 @@ Example output for a normal shell (no ports published):
 ```text
 Agent container is running:
   ID:       9f4723ab921d
-  Name:     agent-f359abc71234
+  Name:     agent-project-a-f359abc71234
   Image:    agent-container:latest
   Status:   Up 12 minutes
   Ports:
@@ -554,8 +561,8 @@ agent list
 Example output:
 
 ```text
-ID: 9f4723ab921d	Name: agent-f359abc71234	Image: agent-container:latest	Status: Up 12 minutes	Ports: 127.0.0.1:2222->22/tcp	PWD: /home/me/project-a
-ID: 1a2b3c4d5e6f	Name: agent-7f8e9d012345	Image: agent-container:latest	Status: Up 3 minutes	Ports:	PWD: /home/me/project-b
+ID: 9f4723ab921d	Name: agent-project-a-f359abc71234	Image: agent-container:latest	Status: Up 12 minutes	Ports: 127.0.0.1:2222->22/tcp	PWD: /home/me/project-a
+ID: 1a2b3c4d5e6f	Name: agent-project-b-7f8e9d012345	Image: agent-container:latest	Status: Up 3 minutes	Ports:	PWD: /home/me/project-b
 ```
 
 ## Stopping a container
@@ -1302,11 +1309,12 @@ directly:
 ```text
 + docker ps --filter label=agent-container=true --filter label=agent-workspace=63d66b2564f5 --format {{.ID}}
 # workspace:      /home/me/project
-# container name: agent-63d66b2564f5
+# container name: agent-project-63d66b2564f5
+# hostname:       project-63d66b2564f5
 # image:          agent-container:latest
 # requested ports: 3000
 Port:  3000 -> container:3000
-+ docker run --interactive --tty --init --name agent-63d66b2564f5 ... --publish 3000:3000 agent-container:latest claude
++ docker run --interactive --tty --init --name agent-project-63d66b2564f5 --hostname project-63d66b2564f5 ... --publish 3000:3000 agent-container:latest claude
 ```
 
 This is the quickest way to confirm which `--publish` flags reached
