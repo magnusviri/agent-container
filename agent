@@ -1474,6 +1474,11 @@ RUN_ARGS=(
     --volume "$WORKSPACE:/workspace"
 
     --volume "$AGENT_HOME/.codex:/home/agent/.codex"
+    # Codex app-server creates a Unix-domain control socket here. Keep it out
+    # of the host-backed Codex state mount: filesystem event forwarding for a
+    # live socket can otherwise consume excessive host CPU.
+    --tmpfs
+    "/home/agent/.codex/app-server-control:rw,nosuid,nodev,noexec"
     --volume "$AGENT_HOME/.claude:/home/agent/.claude"
     --volume "$AGENT_HOME/.config/opencode:/home/agent/.config/opencode"
     --volume "$AGENT_HOME/.local/share/opencode:/home/agent/.local/share/opencode"
