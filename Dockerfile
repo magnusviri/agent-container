@@ -3,13 +3,13 @@
 ARG DEBIAN_VERSION=bookworm-slim
 FROM debian:${DEBIAN_VERSION}
 
-ARG PYTHON_VERSION=3.14.6
-ARG RUBY_VERSION=3.4.10
-ARG NODE_VERSION=24.18.1
-ARG BUNDLER_VERSION=4.0.17
-ARG CLAUDE_CODE_VERSION=2.1.220
-ARG CODEX_VERSION=0.147.0
-ARG OPENCODE_VERSION=1.18.4
+ARG PYTHON_VERSION=latest
+ARG RUBY_VERSION=latest
+ARG NODE_VERSION=latest
+ARG BUNDLER_VERSION=latest
+ARG CLAUDE_CODE_VERSION=latest
+ARG CODEX_VERSION=latest
+ARG OPENCODE_VERSION=latest
 
 ENV PYTHON_VERSION=${PYTHON_VERSION} \
     RUBY_VERSION=${RUBY_VERSION} \
@@ -115,30 +115,38 @@ RUN curl -fsSL https://mise.run | sh \
     && install -m 0755 /root/.local/bin/mise /usr/local/bin/mise \
     && rm -rf /root/.local
 
-RUN mise install --system \
-        python@${PYTHON_VERSION} \
-        ruby@${RUBY_VERSION} \
-        node@${NODE_VERSION} \
-    && mise use -g \
-        python@${PYTHON_VERSION} \
-        ruby@${RUBY_VERSION} \
-        node@${NODE_VERSION} \
-    && mise reshim \
-    && python --version \
-    && ruby --version \
-    && node --version \
-    && gem --version \
-    && python -m pip install ruff cmakelang \
-    && gem install bundler -v "${BUNDLER_VERSION}" --no-document \
-    && gem install standard --no-document \
-    && mise reshim \
-    && bundle --version
+RUN set -eux; \
+    if [ -n "$PYTHON_VERSION" ]; then mise install --system "python@$PYTHON_VERSION" && mise use -g "python@$PYTHON_VERSION"; fi; \
+    if [ -n "$RUBY_VERSION" ]; then mise install --system "ruby@$RUBY_VERSION" && mise use -g "ruby@$RUBY_VERSION"; fi; \
+    if [ -n "$NODE_VERSION" ]; then mise install --system "node@$NODE_VERSION" && mise use -g "node@$NODE_VERSION"; fi; \
+    mise reshim; \
+    if [ -n "$PYTHON_VERSION" ]; then \
+        python --version; \
+        python -m pip install ruff cmakelang; \
+    fi; \
+    if [ -n "$RUBY_VERSION" ]; then \
+        ruby --version; \
+        gem --version; \
+        if [ -n "$BUNDLER_VERSION" ]; then \
+            if [ "$BUNDLER_VERSION" = "latest" ]; then \
+                gem install bundler --no-document; \
+            else \
+                gem install bundler -v "$BUNDLER_VERSION" --no-document; \
+            fi; \
+            bundle --version; \
+        fi; \
+        gem install standard --no-document; \
+    fi; \
+    if [ -n "$NODE_VERSION" ]; then node --version; fi; \
+    mise reshim
 
-RUN npm install --global \
-      @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} \
-      @openai/codex@${CODEX_VERSION} \
-      opencode-ai@${OPENCODE_VERSION} \
-      prettier
+RUN set -eux; \
+    if [ -n "$NODE_VERSION" ]; then \
+        npm install --global prettier; \
+        if [ -n "$CLAUDE_CODE_VERSION" ]; then npm install --global "@anthropic-ai/claude-code@$CLAUDE_CODE_VERSION"; fi; \
+        if [ -n "$CODEX_VERSION" ]; then npm install --global "@openai/codex@$CODEX_VERSION"; fi; \
+        if [ -n "$OPENCODE_VERSION" ]; then npm install --global "opencode-ai@$OPENCODE_VERSION"; fi; \
+    fi
 
 RUN curl -LsSf https://astral.sh/uv/install.sh | UV_NO_MODIFY_PATH=1 sh \
     && install -m 0755 /root/.local/bin/uv /usr/local/bin/uv \

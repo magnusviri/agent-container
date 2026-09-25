@@ -114,8 +114,8 @@ Docker CLI
 mise
 ```
 
-Runtime versions are managed by `mise` and pinned by default in the
-`Dockerfile`. An optional `versions.env` file can override those defaults.
+Runtime versions are managed by `mise`. An optional `versions.env` file can
+pin versions, request the latest release, or omit individual tools.
 
 ## Requirements
 
@@ -975,12 +975,17 @@ other configuration and runtime files in these directories are ignored.
 
 ## Version configuration
 
-The versions of Debian, the language runtimes, and the coding agents are pinned
-in the `Dockerfile`. Language runtimes are installed with `mise`. These pins
-reduce version drift between builds, although the mutable Debian image tag and
-unpinned operating-system packages mean builds are not fully reproducible. You
-do not need a `versions.env` file unless you want to override one or more
-defaults.
+The Dockerfile installs the latest version of each configurable language runtime
+and coding agent by default. Language runtimes are installed with `mise`. Every
+tool setting accepts an exact version, `latest`, or an empty value. An empty
+value omits that tool from the image. Debian remains a required base image and
+continues to use its configured image tag. You do not need a `versions.env` file
+unless you want to pin, update, or omit one or more tools.
+
+This project is intended to make it easy to tailor and build an agent image
+locally for your own environment. It is not intended to produce Docker images
+for sharing: the default use of `latest` and the ability to select local tool
+versions prioritize customization over reproducible distribution.
 
 To create an override file, copy the provided example:
 
@@ -988,31 +993,37 @@ To create an override file, copy the provided example:
 cp ~/.agent-container/versions.env_example ~/.agent-container/versions.env
 ```
 
-Then uncomment and change only the versions you want to override. Commented or
-omitted settings continue to use the versions pinned in the `Dockerfile`. For
-example:
+Then uncomment and change only the settings you want to override. Commented or
+omitted settings continue to use the Dockerfile defaults. For example, pin
+Codex to a specific version:
 
 ```dotenv
 CODEX_VERSION=0.147.0
 ```
 
-Many of the tools also accept `latest` instead of a specific version:
+Request the latest version explicitly:
 
 ```dotenv
 CODEX_VERSION=latest
 ```
 
+Or omit a tool entirely:
+
+```dotenv
+OPENCODE_VERSION=
+```
+
 Using `latest` makes builds less stable because the installed version can
-change whenever a new release is published. For that reason, the `Dockerfile`
-pins every version by default. If you choose `latest`, rebuild without the
-Docker cache to ensure the newest release is installed:
+change whenever a new release is published. Rebuild without the Docker cache to
+ensure the newest release is installed:
 
 ```bash
 agent build --no-cache
 ```
 
 The `versions.env` file is intentionally ignored by Git. Delete it to return to
-all of the versions pinned in the `Dockerfile`.
+the Dockerfile defaults, which install the latest version of every configurable
+tool.
 
 After changing an exact-version override, rebuild the image normally:
 
