@@ -44,8 +44,19 @@ AI_AGENT_HOME="$REPOSITORY_ROOT" \
     "$REPOSITORY_ROOT/agent" ralph --tool codex 3 \
     < /dev/null > /dev/null
 
-grep -Fq 'exec --interactive --user agent --env HOME=/home/agent --workdir /workspace fake-container ralph --tool codex 3' \
+grep -Fq 'exec --interactive --user agent --env HOME=/home/agent --workdir /workspace --env PATH=/usr/local/share/mise/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin fake-container ralph --tool codex 3' \
     "$TEST_ROOT/bash-docker.log" || fail 'Bash launcher did not route Ralph through docker exec'
+
+DOCKER_LOG="$TEST_ROOT/bash-exec-docker.log" \
+DOCKER_STATE=running \
+DOCKER_RUNTIME_STATE="$TEST_ROOT/bash-exec-running.state" \
+PATH="$TEST_ROOT/bin:$PATH" \
+AI_AGENT_HOME="$REPOSITORY_ROOT" \
+    "$REPOSITORY_ROOT/agent" exec terraform \
+    < /dev/null > /dev/null
+
+grep -Fq 'exec --interactive --user agent --env HOME=/home/agent --workdir /workspace --env PATH=/usr/local/share/mise/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin fake-container terraform' \
+    "$TEST_ROOT/bash-exec-docker.log" || fail 'Bash launcher did not expose mise shims to agent exec commands'
 
 DOCKER_LOG="$TEST_ROOT/powershell-docker.log" \
 DOCKER_STATE=running \
@@ -55,7 +66,7 @@ AI_AGENT_HOME="$REPOSITORY_ROOT" \
     pwsh -NoLogo -NoProfile -File "$REPOSITORY_ROOT/agent.ps1" ralph --tool opencode 4 \
     < /dev/null > /dev/null
 
-grep -Fq 'exec --interactive --user agent --env HOME=/home/agent --workdir /workspace fake-container ralph --tool opencode 4' \
+grep -Fq 'exec --interactive --user agent --env HOME=/home/agent --workdir /workspace --env PATH=/usr/local/share/mise/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin fake-container ralph --tool opencode 4' \
     "$TEST_ROOT/powershell-docker.log" || fail 'PowerShell launcher did not route Ralph through docker exec'
 
 DOCKER_LOG="$TEST_ROOT/bash-new-docker.log" \
@@ -68,7 +79,7 @@ AI_AGENT_HOME="$REPOSITORY_ROOT" \
 
 grep -Fq 'run --detach --interactive --init' "$TEST_ROOT/bash-new-docker.log" || fail 'Bash launcher did not create a detached Ralph container'
 grep -Fq 'sleep infinity' "$TEST_ROOT/bash-new-docker.log" || fail 'Bash launcher did not create a reusable container'
-grep -Fq 'exec --interactive --user agent --env HOME=/home/agent --workdir /workspace agent-' \
+grep -Fq 'exec --interactive --user agent --env HOME=/home/agent --workdir /workspace --env PATH=/usr/local/share/mise/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin agent-' \
     "$TEST_ROOT/bash-new-docker.log" || fail 'Bash launcher did not execute Ralph in the new container'
 grep -Fq 'ralph init' "$TEST_ROOT/bash-new-docker.log" || fail 'Bash launcher lost Ralph arguments'
 
@@ -81,7 +92,7 @@ AI_AGENT_HOME="$REPOSITORY_ROOT" \
     < /dev/null > /dev/null
 
 grep -Fq 'start fake-container' "$TEST_ROOT/powershell-stopped-docker.log" || fail 'PowerShell launcher did not start the stopped container'
-grep -Fq 'exec --interactive --user agent --env HOME=/home/agent --workdir /workspace fake-container ralph --tool claude 2' \
+grep -Fq 'exec --interactive --user agent --env HOME=/home/agent --workdir /workspace --env PATH=/usr/local/share/mise/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin fake-container ralph --tool claude 2' \
     "$TEST_ROOT/powershell-stopped-docker.log" || fail 'PowerShell launcher did not execute Ralph in the stopped container'
 
 echo 'Ralph launcher tests passed.'

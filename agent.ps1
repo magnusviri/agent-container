@@ -2,6 +2,7 @@
 
 $ErrorActionPreference = 'Stop'
 $Arguments = @($args)
+$ContainerPath = '/usr/local/share/mise/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
 
 function Show-Usage {
     @'
@@ -814,7 +815,7 @@ try {
         $execArguments = @('exec', '--interactive')
         $interactive = -not [Console]::IsInputRedirected -and -not [Console]::IsOutputRedirected
         if ($interactive) { $execArguments += '--tty' }
-        $execArguments += @('--user', 'agent', '--env', 'HOME=/home/agent', '--workdir', '/workspace', $container)
+        $execArguments += @('--user', 'agent', '--env', 'HOME=/home/agent', '--workdir', '/workspace', '--env', "PATH=$ContainerPath", $container)
         if ($Command.Count -eq 1) { $execArguments += 'bash' } else { $execArguments += $Command.GetRange(1, $Command.Count - 1) }
         if ($interactive -and $Command.Count -eq 1) {
             Invoke-InteractiveDocker $ContainerName $execArguments
@@ -827,7 +828,7 @@ try {
         $execArguments = @('exec', '--interactive')
         $interactive = -not [Console]::IsInputRedirected -and -not [Console]::IsOutputRedirected
         if ($interactive) { $execArguments += '--tty' }
-        $execArguments += @('--user', 'root', '--env', 'HOME=/root', '--workdir', '/workspace', $container)
+        $execArguments += @('--user', 'root', '--env', 'HOME=/root', '--workdir', '/workspace', '--env', "PATH=$ContainerPath", $container)
         if ($Command.Count -eq 1) { $execArguments += 'bash' } else { $execArguments += $Command.GetRange(1, $Command.Count - 1) }
         if ($interactive -and $Command.Count -eq 1) {
             Invoke-InteractiveDocker $ContainerName $execArguments
@@ -879,7 +880,7 @@ try {
             }
             $ralphArguments = @('exec', '--interactive')
             if (-not [Console]::IsInputRedirected -and -not [Console]::IsOutputRedirected) { $ralphArguments += '--tty' }
-            $ralphArguments += @('--user', 'agent', '--env', 'HOME=/home/agent', '--workdir', '/workspace', $ralphContainer)
+            $ralphArguments += @('--user', 'agent', '--env', 'HOME=/home/agent', '--workdir', '/workspace', '--env', "PATH=$ContainerPath", $ralphContainer)
             $ralphArguments += $Command
             Invoke-Docker $ralphArguments
         }
@@ -898,7 +899,7 @@ try {
         $execArguments = @('exec', '--interactive')
         $interactive = -not [Console]::IsInputRedirected -and -not [Console]::IsOutputRedirected
         if ($interactive) { $execArguments += '--tty' }
-        $execArguments += @('--user', 'agent', '--env', 'HOME=/home/agent', '--workdir', '/workspace', $runningContainer, 'bash')
+        $execArguments += @('--user', 'agent', '--env', 'HOME=/home/agent', '--workdir', '/workspace', '--env', "PATH=$ContainerPath", $runningContainer, 'bash')
         if ($interactive) {
             Invoke-InteractiveDocker $ContainerName $execArguments
         }
@@ -962,7 +963,7 @@ try {
             $ralphArguments = @('exec', '--interactive')
             $interactive = -not [Console]::IsInputRedirected -and -not [Console]::IsOutputRedirected
             if ($interactive) { $ralphArguments += '--tty' }
-            $ralphArguments += @('--user', 'agent', '--env', 'HOME=/home/agent', '--workdir', '/workspace', $existingContainer)
+            $ralphArguments += @('--user', 'agent', '--env', 'HOME=/home/agent', '--workdir', '/workspace', '--env', "PATH=$ContainerPath", $existingContainer)
             $ralphArguments += $Command
             Invoke-InteractiveDocker $ContainerName $ralphArguments
         }
@@ -971,7 +972,7 @@ try {
         $execArguments = @('exec', '--interactive')
         $interactive = -not [Console]::IsInputRedirected -and -not [Console]::IsOutputRedirected
         if ($interactive) { $execArguments += '--tty' }
-        $execArguments += @('--user', 'agent', '--env', 'HOME=/home/agent', '--workdir', '/workspace', $existingContainer, 'bash')
+        $execArguments += @('--user', 'agent', '--env', 'HOME=/home/agent', '--workdir', '/workspace', '--env', "PATH=$ContainerPath", $existingContainer, 'bash')
         if ($interactive) {
             Invoke-InteractiveDocker $ContainerName $execArguments
         }
@@ -1143,7 +1144,7 @@ try {
 
             $ralphArguments = @('exec', '--interactive')
             if (-not [Console]::IsInputRedirected -and -not [Console]::IsOutputRedirected) { $ralphArguments += '--tty' }
-            $ralphArguments += @('--user', 'agent', '--env', 'HOME=/home/agent', '--workdir', '/workspace', $ContainerName)
+            $ralphArguments += @('--user', 'agent', '--env', 'HOME=/home/agent', '--workdir', '/workspace', '--env', "PATH=$ContainerPath", $ContainerName)
             $ralphArguments += $Command
             Write-CommandLog $ralphArguments
             & docker @ralphArguments

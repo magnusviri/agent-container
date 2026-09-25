@@ -55,6 +55,11 @@ RUN_ARGS=()
 IO_ARGS=(--interactive)
 CREDENTIAL_MOUNT_ARGS=()
 
+# Docker exec does not run a login shell, so pass the image's tool path
+# explicitly. This keeps mise-managed tools available to non-interactive
+# commands such as `agent exec terraform`.
+CONTAINER_PATH='/usr/local/share/mise/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
+
 if [[ -t 0 && -t 1 ]]; then
     IO_ARGS+=(--tty)
 fi
@@ -1019,6 +1024,7 @@ if [[ ${#COMMAND[@]} -gt 0 ]]; then
                         --user agent \
                         --env HOME=/home/agent \
                         --workdir /workspace \
+                        --env "PATH=$CONTAINER_PATH" \
                         "$container" \
                         bash
                     exit $?
@@ -1029,6 +1035,7 @@ if [[ ${#COMMAND[@]} -gt 0 ]]; then
                     --user agent \
                     --env HOME=/home/agent \
                     --workdir /workspace \
+                    --env "PATH=$CONTAINER_PATH" \
                     "$container" \
                     bash
             fi
@@ -1038,6 +1045,7 @@ if [[ ${#COMMAND[@]} -gt 0 ]]; then
                 --user agent \
                 --env HOME=/home/agent \
                 --workdir /workspace \
+                --env "PATH=$CONTAINER_PATH" \
                 "$container" \
                 "${COMMAND[@]:1}"
             ;;
@@ -1052,6 +1060,7 @@ if [[ ${#COMMAND[@]} -gt 0 ]]; then
                         --user root \
                         --env HOME=/root \
                         --workdir /workspace \
+                        --env "PATH=$CONTAINER_PATH" \
                         "$container" \
                         bash
                     exit $?
@@ -1062,6 +1071,7 @@ if [[ ${#COMMAND[@]} -gt 0 ]]; then
                     --user root \
                     --env HOME=/root \
                     --workdir /workspace \
+                    --env "PATH=$CONTAINER_PATH" \
                     "$container" \
                     bash
             fi
@@ -1071,6 +1081,7 @@ if [[ ${#COMMAND[@]} -gt 0 ]]; then
                 --user root \
                 --env HOME=/root \
                 --workdir /workspace \
+                --env "PATH=$CONTAINER_PATH" \
                 "$container" \
                 "${COMMAND[@]:1}"
             ;;
@@ -1154,6 +1165,7 @@ if [[ ${#COMMAND[@]} -gt 0 ]]; then
                     --user agent \
                     --env HOME=/home/agent \
                     --workdir /workspace \
+                    --env "PATH=$CONTAINER_PATH" \
                     "$container" \
                     "${COMMAND[@]}"
             fi
@@ -1191,6 +1203,7 @@ if [[ ${#COMMAND[@]} -eq 0 ]]; then
                 --user agent \
                 --env HOME=/home/agent \
                 --workdir /workspace \
+                --env "PATH=$CONTAINER_PATH" \
                 "$RUNNING_CONTAINER" \
                 bash
             exit $?
@@ -1201,6 +1214,7 @@ if [[ ${#COMMAND[@]} -eq 0 ]]; then
             --user agent \
             --env HOME=/home/agent \
             --workdir /workspace \
+            --env "PATH=$CONTAINER_PATH" \
             "$RUNNING_CONTAINER" \
             bash
     fi
@@ -1327,6 +1341,7 @@ if [[ -n "$EXISTING_CONTAINER" ]]; then
             --user agent \
             --env HOME=/home/agent \
             --workdir /workspace \
+            --env "PATH=$CONTAINER_PATH" \
             "$EXISTING_CONTAINER" \
             "${COMMAND[@]}"
         exit $?
@@ -1339,6 +1354,7 @@ if [[ -n "$EXISTING_CONTAINER" ]]; then
             --user agent \
             --env HOME=/home/agent \
             --workdir /workspace \
+            --env "PATH=$CONTAINER_PATH" \
             "$EXISTING_CONTAINER" \
             bash
         exit $?
@@ -1348,6 +1364,7 @@ if [[ -n "$EXISTING_CONTAINER" ]]; then
         --user agent \
         --env HOME=/home/agent \
         --workdir /workspace \
+        --env "PATH=$CONTAINER_PATH" \
         "$EXISTING_CONTAINER" \
         bash
 fi
@@ -1571,6 +1588,7 @@ if (( ${#COMMAND[@]} > 0 )) && [[ "${COMMAND[0]}" == "ralph" ]]; then
         --user agent \
         --env HOME=/home/agent \
         --workdir /workspace \
+        --env "PATH=$CONTAINER_PATH" \
         "$CONTAINER_NAME" \
         "${COMMAND[@]}"
     exit $?
