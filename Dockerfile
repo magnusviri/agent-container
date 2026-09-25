@@ -172,19 +172,33 @@ RUN git config --system --add safe.directory '*' \
 
 # Make `codex`, `claude`, and `opencode` inside an interactive container shell
 # behave like their launcher defaults: the container is the outer sandbox, so
-# default to full-access modes. Explicit override flags still win.
+# default to full-access modes and avoid Codex's managed daemon. Explicit
+# sandbox overrides still win.
 RUN cat >> /etc/bash.bashrc <<'EOF'
 
 codex() {
+    local sandbox_configured=0
+    local no_daemon_configured=0
+    local -a default_args=()
+
     for arg in "$@"; do
         case "$arg" in
             --sandbox|--sandbox=*|-s|-s?*|--dangerously-bypass-approvals-and-sandbox|--yolo)
-                command codex "$@"
-                return
+                sandbox_configured=1
+                ;;
+            --no-daemon)
+                no_daemon_configured=1
                 ;;
         esac
     done
-    command codex --sandbox danger-full-access "$@"
+
+    if [[ "$sandbox_configured" == 0 ]]; then
+        default_args+=(--sandbox danger-full-access)
+    fi
+    if [[ "$no_daemon_configured" == 0 ]]; then
+        default_args+=(--no-daemon)
+    fi
+    command codex "${default_args[@]}" "$@"
 }
 
 claude() {

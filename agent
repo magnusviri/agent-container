@@ -147,8 +147,10 @@ Behavior:
   agent codex
       Start Codex in a new agent container.
 
-      Codex defaults to --sandbox danger-full-access because the container
-      provides the outer isolation boundary. Pass --sandbox or -s to override.
+      Codex defaults to --sandbox danger-full-access and --no-daemon because
+      the container provides the outer isolation boundary and its managed
+      daemon can be expensive on host-backed filesystems. Pass --sandbox or
+      -s to override the sandbox default.
 
   agent tunnel
       Open the configured SSH tunnels to the running workspace container.
@@ -1356,21 +1358,32 @@ fi
 
 if [[ ${#COMMAND[@]} -gt 0 && "${COMMAND[0]}" == "codex" ]]; then
     CODEX_SANDBOX_CONFIGURED=0
+    CODEX_NO_DAEMON_CONFIGURED=0
+    CODEX_ARGS=("${COMMAND[@]:1}")
 
-    for arg in "${COMMAND[@]:1}"; do
+    for arg in "${CODEX_ARGS[@]}"; do
         case "$arg" in
             --sandbox|--sandbox=*|-s|-s?*|--dangerously-bypass-approvals-and-sandbox|--yolo)
                 CODEX_SANDBOX_CONFIGURED=1
-                break
+                ;;
+            --no-daemon)
+                CODEX_NO_DAEMON_CONFIGURED=1
                 ;;
         esac
     done
 
-    if [[ "$CODEX_SANDBOX_CONFIGURED" == 0 ]]; then
+    if [[ "$CODEX_SANDBOX_CONFIGURED" == 0 || "$CODEX_NO_DAEMON_CONFIGURED" == 0 ]]; then
         COMMAND=(
             codex
-            --sandbox danger-full-access
-            "${COMMAND[@]:1}"
+        )
+        if [[ "$CODEX_SANDBOX_CONFIGURED" == 0 ]]; then
+            COMMAND+=(--sandbox danger-full-access)
+        fi
+        if [[ "$CODEX_NO_DAEMON_CONFIGURED" == 0 ]]; then
+            COMMAND+=(--no-daemon)
+        fi
+        COMMAND+=(
+            "${CODEX_ARGS[@]}"
         )
     fi
 
@@ -1474,13 +1487,11 @@ RUN_ARGS=(
     --volume "$WORKSPACE:/workspace"
 
     --volume "$AGENT_HOME/.codex:/home/agent/.codex"
-    # Codex's managed app-server stores its control socket and lifecycle state
-    # here. Keep both off the host-backed Codex state mount: filesystem event
-    # forwarding for daemon runtime files can otherwise consume host CPU.
+    # Codex app-server creates a Unix-domain control socket here. Keep it out
+    # of the host-backed Codex state mount: filesystem event forwarding for a
+    # live socket can otherwise consume excessive host CPU.
     --tmpfs
     "/home/agent/.codex/app-server-control:rw,nosuid,nodev,noexec,uid=1000,gid=1000,mode=0700"
-    --tmpfs
-    "/home/agent/.codex/app-server-daemon:rw,nosuid,nodev,noexec,uid=1000,gid=1000,mode=0700"
     --volume "$AGENT_HOME/.claude:/home/agent/.claude"
     --volume "$AGENT_HOME/.config/opencode:/home/agent/.config/opencode"
     --volume "$AGENT_HOME/.local/share/opencode:/home/agent/.local/share/opencode"

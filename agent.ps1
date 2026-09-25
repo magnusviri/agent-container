@@ -48,8 +48,10 @@ Behavior:
   agent codex
       Start Codex in a new agent container.
 
-      Codex defaults to --sandbox danger-full-access because the container
-      provides the outer isolation boundary. Pass --sandbox or -s to override.
+      Codex defaults to --sandbox danger-full-access and --no-daemon because
+      the container provides the outer isolation boundary and its managed
+      daemon can be expensive on host-backed filesystems. Pass --sandbox or -s
+      to override the sandbox default.
 
   agent tunnel
       Open the configured SSH tunnels to the running workspace container.
@@ -979,16 +981,23 @@ try {
     $PublishSsh = $false
     if ($Command.Count -and $Command[0] -eq 'codex') {
         $sandboxConfigured = $false
+        $noDaemonConfigured = $false
         foreach ($argument in @($Command | Select-Object -Skip 1)) {
             if ($argument -eq '--sandbox' -or $argument -eq '-s' -or $argument -like '--sandbox=*' -or
                 $argument -like '-s?*' -or $argument -in @('--dangerously-bypass-approvals-and-sandbox', '--yolo')) {
-                $sandboxConfigured = $true; break
+                $sandboxConfigured = $true
+            }
+            if ($argument -eq '--no-daemon') {
+                $noDaemonConfigured = $true
             }
         }
-        if (-not $sandboxConfigured) {
+        if (-not $sandboxConfigured -or -not $noDaemonConfigured) {
             $remainingCommand = @($Command | Select-Object -Skip 1)
             $Command = [System.Collections.Generic.List[string]]::new()
-            @('codex', '--sandbox', 'danger-full-access') + $remainingCommand | ForEach-Object { $Command.Add($_) }
+            $Command.Add('codex')
+            if (-not $sandboxConfigured) { @('--sandbox', 'danger-full-access') | ForEach-Object { $Command.Add($_) } }
+            if (-not $noDaemonConfigured) { $Command.Add('--no-daemon') }
+            $remainingCommand | ForEach-Object { $Command.Add($_) }
         }
     }
 
@@ -1047,11 +1056,10 @@ try {
         '--env', 'IS_SANDBOX=1',
         '--volume', "$($script:Workspace):/workspace",
         '--volume', "$(Join-Path $script:AgentHome '.codex'):/home/agent/.codex",
-        # Codex's managed app-server stores its control socket and lifecycle
-        # state here. Keep both off the host-backed Codex state mount to avoid
-        # host filesystem event forwarding for daemon runtime files.
+        # Codex app-server creates a Unix-domain control socket here. Keep it
+        # out of the host-backed Codex state mount to avoid host filesystem
+        # event forwarding for a live socket.
         '--tmpfs', '/home/agent/.codex/app-server-control:rw,nosuid,nodev,noexec,uid=1000,gid=1000,mode=0700',
-        '--tmpfs', '/home/agent/.codex/app-server-daemon:rw,nosuid,nodev,noexec,uid=1000,gid=1000,mode=0700',
         '--volume', "$(Join-Path $script:AgentHome '.claude'):/home/agent/.claude",
         '--volume', "$(Join-Path $script:AgentHome '.config/opencode'):/home/agent/.config/opencode",
         '--volume', "$(Join-Path $script:AgentHome '.local/share/opencode'):/home/agent/.local/share/opencode"

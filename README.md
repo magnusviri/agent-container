@@ -280,13 +280,16 @@ Then launch an agent.
 agent codex
 ```
 
-The launcher runs Codex with `--sandbox danger-full-access` by default because
-the container provides the outer isolation boundary. Pass an explicit
-`--sandbox` (or `-s`) option after `codex` to override this default.
+The launcher runs Codex with `--sandbox danger-full-access --no-daemon` by
+default. The container provides the outer isolation boundary, and avoiding
+Codex's managed background daemon prevents excessive host load from its
+runtime activity on host-backed filesystems. Pass an explicit `--sandbox` (or
+`-s`) option after `codex` to override the sandbox default.
 
 The same default applies inside the container. Interactive container shells
 define a `codex` wrapper, so typing `codex` in a shell behaves like
-`agent codex`. Passing an explicit `--sandbox` option still overrides it.
+`agent codex`. Passing an explicit `--sandbox` option still overrides that
+default. Use `command codex` if you deliberately need Codex's managed daemon.
 
 When Codex requires browser authentication, start it with
 `agent --forward-port 1455 codex`. See
@@ -973,11 +976,10 @@ at `/usr/local/share/agent-container/AGENTS.md`; Codex's `AGENTS.md`, Claude
 Code's `CLAUDE.md`, and OpenCode's `AGENTS.md` are symbolic links to it. All
 other configuration and runtime files in these directories are ignored.
 
-Codex's `app-server-control` and `app-server-daemon` directories are mounted
-as container-local temporary storage. The Unix socket and managed-daemon
-lifecycle state are therefore not placed on the host-backed `.codex` state
-mount, while credentials and the rest of the Codex configuration remain
-persistent. These runtime directories are recreated when the container starts.
+Codex's `app-server-control` directory is mounted as container-local temporary
+storage. Its Unix socket is therefore not placed on the host-backed `.codex`
+state mount, while credentials and the rest of the Codex configuration remain
+persistent. The control directory is recreated when the container starts.
 
 ## Version configuration
 
