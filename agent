@@ -1478,9 +1478,9 @@ RUN_ARGS=(
     # here. Keep both off the host-backed Codex state mount: filesystem event
     # forwarding for daemon runtime files can otherwise consume host CPU.
     --tmpfs
-    "/home/agent/.codex/app-server-control:rw,nosuid,nodev,noexec"
+    "/home/agent/.codex/app-server-control:rw,nosuid,nodev,noexec,uid=1000,gid=1000,mode=0700"
     --tmpfs
-    "/home/agent/.codex/app-server-daemon:rw,nosuid,nodev,noexec"
+    "/home/agent/.codex/app-server-daemon:rw,nosuid,nodev,noexec,uid=1000,gid=1000,mode=0700"
     --volume "$AGENT_HOME/.claude:/home/agent/.claude"
     --volume "$AGENT_HOME/.config/opencode:/home/agent/.config/opencode"
     --volume "$AGENT_HOME/.local/share/opencode:/home/agent/.local/share/opencode"

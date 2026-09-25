@@ -1050,8 +1050,8 @@ try {
         # Codex's managed app-server stores its control socket and lifecycle
         # state here. Keep both off the host-backed Codex state mount to avoid
         # host filesystem event forwarding for daemon runtime files.
-        '--tmpfs', '/home/agent/.codex/app-server-control:rw,nosuid,nodev,noexec',
-        '--tmpfs', '/home/agent/.codex/app-server-daemon:rw,nosuid,nodev,noexec',
+        '--tmpfs', '/home/agent/.codex/app-server-control:rw,nosuid,nodev,noexec,uid=1000,gid=1000,mode=0700',
+        '--tmpfs', '/home/agent/.codex/app-server-daemon:rw,nosuid,nodev,noexec,uid=1000,gid=1000,mode=0700',
         '--volume', "$(Join-Path $script:AgentHome '.claude'):/home/agent/.claude",
         '--volume', "$(Join-Path $script:AgentHome '.config/opencode'):/home/agent/.config/opencode",
         '--volume', "$(Join-Path $script:AgentHome '.local/share/opencode'):/home/agent/.local/share/opencode"
