@@ -6,6 +6,7 @@ FROM debian:${DEBIAN_VERSION}
 ARG PYTHON_VERSION=latest
 ARG RUBY_VERSION=latest
 ARG NODE_VERSION=latest
+ARG TERRAFORM_VERSION=
 ARG BUNDLER_VERSION=latest
 ARG CLAUDE_CODE_VERSION=latest
 ARG CODEX_VERSION=latest
@@ -14,6 +15,7 @@ ARG OPENCODE_VERSION=latest
 ENV PYTHON_VERSION=${PYTHON_VERSION} \
     RUBY_VERSION=${RUBY_VERSION} \
     NODE_VERSION=${NODE_VERSION} \
+    TERRAFORM_VERSION=${TERRAFORM_VERSION} \
     BUNDLER_VERSION=${BUNDLER_VERSION} \
     CLAUDE_CODE_VERSION=${CLAUDE_CODE_VERSION} \
     CODEX_VERSION=${CODEX_VERSION} \
@@ -119,6 +121,7 @@ RUN set -eux; \
     if [ -n "$PYTHON_VERSION" ]; then mise install --system "python@$PYTHON_VERSION" && mise use -g "python@$PYTHON_VERSION"; fi; \
     if [ -n "$RUBY_VERSION" ]; then mise install --system "ruby@$RUBY_VERSION" && mise use -g "ruby@$RUBY_VERSION"; fi; \
     if [ -n "$NODE_VERSION" ]; then mise install --system "node@$NODE_VERSION" && mise use -g "node@$NODE_VERSION"; fi; \
+    if [ -n "$TERRAFORM_VERSION" ]; then mise install --system "terraform@$TERRAFORM_VERSION" && mise use -g "terraform@$TERRAFORM_VERSION"; fi; \
     mise reshim; \
     if [ -n "$PYTHON_VERSION" ]; then \
         python --version; \
@@ -138,6 +141,7 @@ RUN set -eux; \
         gem install standard --no-document; \
     fi; \
     if [ -n "$NODE_VERSION" ]; then node --version; fi; \
+    if [ -n "$TERRAFORM_VERSION" ]; then terraform --version; fi; \
     mise reshim
 
 RUN set -eux; \

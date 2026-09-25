@@ -976,11 +976,13 @@ other configuration and runtime files in these directories are ignored.
 ## Version configuration
 
 The Dockerfile installs the latest version of each configurable language runtime
-and coding agent by default. Language runtimes are installed with `mise`. Every
-tool setting accepts an exact version, `latest`, or an empty value. An empty
-value omits that tool from the image. Debian remains a required base image and
-continues to use its configured image tag. You do not need a `versions.env` file
-unless you want to pin, update, or omit one or more tools.
+and coding agent by default. Language runtimes and Terraform are installed with
+`mise`. Every tool setting accepts an exact version, `latest`, or an empty value.
+An empty value omits that tool from the image. Terraform is omitted by default;
+set `TERRAFORM_VERSION` to an exact version or `latest` to install it. Debian
+remains a required base image and continues to use its configured image tag. You
+do not need a `versions.env` file unless you want to pin, update, or omit one or
+more tools.
 
 This project is intended to make it easy to tailor and build an agent image
 locally for your own environment. It is not intended to produce Docker images
@@ -1011,6 +1013,12 @@ Or omit a tool entirely:
 
 ```dotenv
 OPENCODE_VERSION=
+```
+
+To install Terraform, set its version explicitly or request the latest release:
+
+```dotenv
+TERRAFORM_VERSION=latest
 ```
 
 Using `latest` makes builds less stable because the installed version can
