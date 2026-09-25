@@ -973,10 +973,11 @@ at `/usr/local/share/agent-container/AGENTS.md`; Codex's `AGENTS.md`, Claude
 Code's `CLAUDE.md`, and OpenCode's `AGENTS.md` are symbolic links to it. All
 other configuration and runtime files in these directories are ignored.
 
-Codex's `app-server-control` directory is mounted as container-local temporary
-storage. Its Unix socket is therefore not placed on the host-backed `.codex`
-state mount, while credentials and the rest of the Codex configuration remain
-persistent. The control directory is recreated when the container starts.
+Codex's `app-server-control` and `app-server-daemon` directories are mounted
+as container-local temporary storage. The Unix socket and managed-daemon
+lifecycle state are therefore not placed on the host-backed `.codex` state
+mount, while credentials and the rest of the Codex configuration remain
+persistent. These runtime directories are recreated when the container starts.
 
 ## Version configuration
 
