@@ -842,6 +842,23 @@ print_published_ports() {
     fi
 }
 
+print_container_version() {
+    local source="$1"
+    local version
+
+    # Image labels are copied to containers, so this accepts either an image
+    # reference before creation or a container ID after it has been started.
+    version="$(run_docker inspect --format \
+        '{{with .Config.Labels}}{{index . "org.opencontainers.image.version"}}{{end}}' \
+        "$source")"
+
+    if [[ -n "$version" ]]; then
+        echo "Container version: $version"
+    else
+        echo "Container version: unknown"
+    fi
+}
+
 confirm_no_published_ports() {
     local response
 
@@ -1392,6 +1409,7 @@ if [[ -n "$EXISTING_CONTAINER" ]]; then
 
     echo "Starting existing container $EXISTING_CONTAINER..."
     run_docker start "$EXISTING_CONTAINER" >/dev/null
+    print_container_version "$EXISTING_CONTAINER"
     print_published_ports "$EXISTING_CONTAINER"
 
     if [[ ${#COMMAND[@]} -gt 0 && "${COMMAND[0]}" == "ralph" ]]; then
@@ -1630,6 +1648,8 @@ done
 if [[ ${#PORT_ARGS[@]} -eq 0 ]]; then
     echo "  (none)"
 fi
+
+print_container_version "$IMAGE"
 
 # -----------------------------------------------------------------------------
 # Launch

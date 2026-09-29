@@ -245,6 +245,9 @@ the default image name is:
 agent-container:0.1.0
 ```
 
+When starting a container, the launcher prints its OCI image version. This is
+also shown when a stopped workspace container is restarted.
+
 `agent build` tags each default build with both the immutable release tag
 (`agent-container:0.1.0`) and the moving convenience tag
 (`agent-container:latest`). The launcher uses the release tag by default, so a

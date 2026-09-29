@@ -1,0 +1,9 @@
+  git tag -a v0.1.0 -m "Release v0.1.0"
+  git push origin main
+  git push origin v0.1.0
+
+  To push all local tags at once:
+
+  git push origin --tags
+
+  Before tagging a later release, update VERSION first (for example, 0.2.0), commit it, then tag that same commit as v0.2.0.
