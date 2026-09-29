@@ -105,7 +105,7 @@ for tool in codex claude opencode; do
     PATH="$MOCK_BIN:$PATH" RALPH_WORKSPACE="$workspace" "$RALPH" --tool "$tool" 1 >/dev/null
     assert_contains "$workspace/invocations.log" "$tool|"
     case "$tool" in
-        codex) assert_contains "$workspace/invocations.log" 'exec --ephemeral --sandbox danger-full-access -' ;;
+        codex) assert_contains "$workspace/invocations.log" '--no-daemon exec --ephemeral --sandbox danger-full-access -' ;;
         claude) assert_contains "$workspace/invocations.log" '--dangerously-skip-permissions --print' ;;
         opencode) assert_contains "$workspace/invocations.log" '--dangerously-skip-permissions run' ;;
     esac

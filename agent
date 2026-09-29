@@ -509,6 +509,26 @@ find_existing_container() {
         | head -n 1
 }
 
+codex_control_socket_isolated() {
+    local container="$1"
+    local mount_type
+
+    mount_type="$(run_docker inspect --format \
+        '{{range .Mounts}}{{if eq .Destination "/home/agent/.codex/app-server-control"}}{{.Type}}{{end}}{{end}}' \
+        "$container")"
+    [[ "$mount_type" == "tmpfs" ]]
+}
+
+codex_control_socket_requires_new_container() {
+    echo "This workspace container predates Codex control-socket isolation." >&2
+    echo "Starting Codex in it can create a socket on the host-backed .codex mount" >&2
+    echo "and consume excessive host CPU." >&2
+    echo "Delete it and start a new container:" >&2
+    echo "  agent delete" >&2
+    echo "  agent codex" >&2
+    exit 1
+}
+
 interactive_tty() {
     local arg
 
@@ -1017,6 +1037,11 @@ if [[ ${#COMMAND[@]} -gt 0 ]]; then
         exec)
             container="$(require_running_container)"
 
+            if [[ ${#COMMAND[@]} -gt 1 && "${COMMAND[1]}" == "codex" ]] \
+                && ! codex_control_socket_isolated "$container"; then
+                codex_control_socket_requires_new_container
+            fi
+
             if [[ ${#COMMAND[@]} -eq 1 ]]; then
                 if interactive_tty; then
                     run_interactive run_docker exec \
@@ -1146,6 +1171,10 @@ if [[ ${#COMMAND[@]} -gt 0 ]]; then
             container="$(find_running_container)"
 
             if [[ -n "$container" ]]; then
+                if ! codex_control_socket_isolated "$container"; then
+                    codex_control_socket_requires_new_container
+                fi
+
                 if [[ "$CREDENTIALS_REQUESTED" == 1 ]]; then
                     credentials_require_new_container
                 fi
@@ -1181,6 +1210,10 @@ if [[ ${#COMMAND[@]} -eq 0 ]]; then
     RUNNING_CONTAINER="$(find_running_container)"
 
     if [[ -n "$RUNNING_CONTAINER" ]]; then
+        if ! codex_control_socket_isolated "$RUNNING_CONTAINER"; then
+            codex_control_socket_requires_new_container
+        fi
+
         if [[ "$CREDENTIALS_REQUESTED" == 1 ]]; then
             credentials_require_new_container
         fi
@@ -1316,6 +1349,10 @@ fi
 EXISTING_CONTAINER="$(find_existing_container)"
 
 if [[ -n "$EXISTING_CONTAINER" ]]; then
+    if ! codex_control_socket_isolated "$EXISTING_CONTAINER"; then
+        codex_control_socket_requires_new_container
+    fi
+
     if [[ "$CREDENTIALS_REQUESTED" == 1 ]]; then
         credentials_require_new_container
     fi

@@ -27,6 +27,10 @@ if [[ "${1:-}" == "ps" ]]; then
     fi
 elif [[ "${1:-}" == "start" ]]; then
     : > "$DOCKER_RUNTIME_STATE"
+elif [[ "${1:-}" == "inspect" ]]; then
+    if [[ "${DOCKER_CONTROL_MOUNT:-tmpfs}" == "tmpfs" ]]; then
+        echo 'tmpfs'
+    fi
 elif [[ "${1:-}" == "run" && " $* " == *" --detach "* ]]; then
     : > "$DOCKER_RUNTIME_STATE"
     echo 'fake-container'
@@ -46,6 +50,18 @@ AI_AGENT_HOME="$REPOSITORY_ROOT" \
 
 grep -Fq 'exec --interactive --user agent --env HOME=/home/agent --workdir /workspace --env PATH=/usr/local/share/mise/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin fake-container ralph --tool codex 3' \
     "$TEST_ROOT/bash-docker.log" || fail 'Bash launcher did not route Ralph through docker exec'
+
+if DOCKER_LOG="$TEST_ROOT/bash-legacy-docker.log" \
+    DOCKER_STATE=running \
+    DOCKER_CONTROL_MOUNT=missing \
+    DOCKER_RUNTIME_STATE="$TEST_ROOT/bash-legacy-running.state" \
+    PATH="$TEST_ROOT/bin:$PATH" \
+    AI_AGENT_HOME="$REPOSITORY_ROOT" \
+    "$REPOSITORY_ROOT/agent" < /dev/null > /dev/null 2> "$TEST_ROOT/bash-legacy.err"; then
+    fail 'Bash launcher accepted a container without Codex socket isolation'
+fi
+grep -Fq 'predates Codex control-socket isolation' "$TEST_ROOT/bash-legacy.err" \
+    || fail 'Bash launcher did not explain the missing Codex socket isolation'
 
 DOCKER_LOG="$TEST_ROOT/bash-exec-docker.log" \
 DOCKER_STATE=running \

@@ -448,6 +448,30 @@ function Get-RunningContainer {
     return $container
 }
 
+function Test-CodexControlSocketIsolated {
+    param([string] $Container)
+
+    $inspectArguments = @(
+        'inspect', '--format',
+        '{{range .Mounts}}{{if eq .Destination "/home/agent/.codex/app-server-control"}}{{.Type}}{{end}}{{end}}',
+        $Container
+    )
+    Write-CommandLog $inspectArguments
+    $mountType = & docker @inspectArguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "Unable to inspect container $Container."
+    }
+    return (@($mountType) -join "`n").Trim() -eq 'tmpfs'
+}
+
+function Assert-CodexControlSocketIsolated {
+    param([string] $Container)
+
+    if (-not (Test-CodexControlSocketIsolated $Container)) {
+        throw "This workspace container predates Codex control-socket isolation. Starting Codex in it can create a socket on the host-backed .codex mount and consume excessive host CPU. Delete it, then run agent codex."
+    }
+}
+
 function Test-PortAvailable {
     param([int] $Port)
 
@@ -812,6 +836,9 @@ try {
 
     if ($builtIn -eq 'exec') {
         $container = Get-RunningContainer
+        if ($Command.Count -gt 1 -and $Command[1] -eq 'codex') {
+            Assert-CodexControlSocketIsolated $container
+        }
         $execArguments = @('exec', '--interactive')
         $interactive = -not [Console]::IsInputRedirected -and -not [Console]::IsOutputRedirected
         if ($interactive) { $execArguments += '--tty' }
@@ -869,6 +896,7 @@ try {
     if ($builtIn -eq 'ralph') {
         $ralphContainer = Get-MatchingContainer
         if ($ralphContainer) {
+            Assert-CodexControlSocketIsolated $ralphContainer
             if ($CredentialsRequested) {
                 throw 'Credential mounts require a new container. Run agent stop first.'
             }
@@ -888,6 +916,7 @@ try {
 
     $runningContainer = Get-MatchingContainer
     if (-not $Command.Count -and $runningContainer) {
+        Assert-CodexControlSocketIsolated $runningContainer
         if ($CredentialsRequested) { throw 'Credential mounts require a new container. Run agent stop first.' }
         if ($ExtraPorts.Count -and -not (Test-RequestedPortsConfigured $runningContainer $ExtraPorts)) {
             Throw-PortsRequireNewContainer
@@ -945,6 +974,7 @@ try {
 
     $existingContainer = Get-MatchingContainer -IncludeStopped
     if ($existingContainer) {
+        Assert-CodexControlSocketIsolated $existingContainer
         if ($CredentialsRequested) { throw 'Credential mounts require a new container. Run agent delete first.' }
         if ($ExtraPorts.Count -and -not (Test-RequestedPortsConfigured $existingContainer $ExtraPorts)) {
             Throw-PortsRequireNewContainer

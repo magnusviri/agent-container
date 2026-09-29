@@ -980,6 +980,8 @@ Codex's `app-server-control` directory is mounted as container-local temporary
 storage. Its Unix socket is therefore not placed on the host-backed `.codex`
 state mount, while credentials and the rest of the Codex configuration remain
 persistent. The control directory is recreated when the container starts.
+Containers created before this isolation was added cannot be updated in place;
+the launcher will ask you to run `agent delete` before it starts one of them.
 
 ## Version configuration
 

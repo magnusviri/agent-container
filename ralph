@@ -122,7 +122,10 @@ run_backend() {
 
     case "$tool" in
         codex)
-            codex exec --ephemeral --sandbox danger-full-access - < "$INSTRUCTIONS_FILE"
+            # Ralph invokes Codex directly instead of through the interactive
+            # shell wrapper. Avoid its managed daemon, whose control socket
+            # would otherwise be created under the host-backed .codex mount.
+            codex --no-daemon exec --ephemeral --sandbox danger-full-access - < "$INSTRUCTIONS_FILE"
             ;;
         claude)
             claude --dangerously-skip-permissions --print < "$INSTRUCTIONS_FILE"
