@@ -3,32 +3,6 @@
 ARG DEBIAN_VERSION=bookworm-slim
 FROM debian:${DEBIAN_VERSION}
 
-ARG PYTHON_VERSION=latest
-ARG RUBY_VERSION=latest
-ARG NODE_VERSION=latest
-ARG GO_VERSION=
-ARG SWIFT_VERSION=
-ARG TERRAFORM_VERSION=
-ARG BUNDLER_VERSION=latest
-ARG CLAUDE_CODE_VERSION=latest
-ARG CODEX_VERSION=latest
-ARG OPENCODE_VERSION=latest
-ARG PROJECT_VERSION=dev
-
-LABEL org.opencontainers.image.title="agent-container" \
-    org.opencontainers.image.version="${PROJECT_VERSION}"
-
-ENV PYTHON_VERSION=${PYTHON_VERSION} \
-    RUBY_VERSION=${RUBY_VERSION} \
-    NODE_VERSION=${NODE_VERSION} \
-    GO_VERSION=${GO_VERSION} \
-    SWIFT_VERSION=${SWIFT_VERSION} \
-    TERRAFORM_VERSION=${TERRAFORM_VERSION} \
-    BUNDLER_VERSION=${BUNDLER_VERSION} \
-    CLAUDE_CODE_VERSION=${CLAUDE_CODE_VERSION} \
-    CODEX_VERSION=${CODEX_VERSION} \
-    OPENCODE_VERSION=${OPENCODE_VERSION}
-
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -125,6 +99,50 @@ RUN curl -fsSL https://mise.run | sh \
     && install -m 0755 /root/.local/bin/mise /usr/local/bin/mise \
     && rm -rf /root/.local
 
+# These tools and the base user setup do not vary with versions.env. Keep them
+# before version-dependent layers so changing a version reuses their cache.
+RUN curl -LsSf https://astral.sh/uv/install.sh | UV_NO_MODIFY_PATH=1 sh \
+    && install -m 0755 /root/.local/bin/uv /usr/local/bin/uv \
+    && rm -rf /root/.local
+
+RUN cd /tmp \
+    && curl -fsSL https://getmic.ro | bash \
+    && install -m 0755 micro /usr/local/bin/micro \
+    && rm micro
+
+RUN useradd -m -s /bin/bash agent
+
+WORKDIR /workspace
+
+RUN git config --system --add safe.directory '*' \
+    && git config --system init.defaultBranch main \
+    && git config --system core.autocrlf false \
+    && git config --system advice.detachedHead false
+
+# Version build arguments intentionally begin here. versions.env is expected to
+# change more frequently than the Debian package and bootstrap layers above.
+ARG PYTHON_VERSION=latest
+ARG RUBY_VERSION=latest
+ARG NODE_VERSION=latest
+ARG GO_VERSION=
+ARG SWIFT_VERSION=
+ARG TERRAFORM_VERSION=
+ARG BUNDLER_VERSION=latest
+ARG CLAUDE_CODE_VERSION=latest
+ARG CODEX_VERSION=latest
+ARG OPENCODE_VERSION=latest
+
+ENV PYTHON_VERSION=${PYTHON_VERSION} \
+    RUBY_VERSION=${RUBY_VERSION} \
+    NODE_VERSION=${NODE_VERSION} \
+    GO_VERSION=${GO_VERSION} \
+    SWIFT_VERSION=${SWIFT_VERSION} \
+    TERRAFORM_VERSION=${TERRAFORM_VERSION} \
+    BUNDLER_VERSION=${BUNDLER_VERSION} \
+    CLAUDE_CODE_VERSION=${CLAUDE_CODE_VERSION} \
+    CODEX_VERSION=${CODEX_VERSION} \
+    OPENCODE_VERSION=${OPENCODE_VERSION}
+
 RUN set -eux; \
     if [ -n "$PYTHON_VERSION" ]; then mise install --system "python@$PYTHON_VERSION" && mise use -g "python@$PYTHON_VERSION"; fi; \
     if [ -n "$RUBY_VERSION" ]; then mise install --system "ruby@$RUBY_VERSION" && mise use -g "ruby@$RUBY_VERSION"; fi; \
@@ -174,24 +192,6 @@ RUN set -eux; \
         if [ -n "$CODEX_VERSION" ]; then ln -sf "$(mise which codex)" /usr/local/bin/codex; fi; \
         if [ -n "$OPENCODE_VERSION" ]; then ln -sf "$(mise which opencode)" /usr/local/bin/opencode; fi; \
     fi
-
-RUN curl -LsSf https://astral.sh/uv/install.sh | UV_NO_MODIFY_PATH=1 sh \
-    && install -m 0755 /root/.local/bin/uv /usr/local/bin/uv \
-    && rm -rf /root/.local
-
-RUN cd /tmp \
-    && curl -fsSL https://getmic.ro | bash \
-    && install -m 0755 micro /usr/local/bin/micro \
-    && rm micro
-
-RUN useradd -m -s /bin/bash agent
-
-WORKDIR /workspace
-
-RUN git config --system --add safe.directory '*' \
-    && git config --system init.defaultBranch main \
-    && git config --system core.autocrlf false \
-    && git config --system advice.detachedHead false
 
 # Make `codex`, `claude`, and `opencode` inside an interactive container shell
 # behave like their launcher defaults: the container is the outer sandbox, so
@@ -315,6 +315,10 @@ RUN set -eux; \
     opencode --version; \
     ralph --help; \
     uv --version
+
+ARG PROJECT_VERSION=dev
+LABEL org.opencontainers.image.title="agent-container" \
+    org.opencontainers.image.version="${PROJECT_VERSION}"
 
 ENTRYPOINT ["/usr/local/bin/agent-entrypoint"]
 CMD ["bash"]
