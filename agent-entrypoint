@@ -3,6 +3,12 @@ set -euo pipefail
 
 AGENT_USER=agent
 
+# The coding CLIs are installed through mise.  Docker callers and managed
+# agent runners can supply their own PATH, which replaces the image ENV rather
+# than extending it.  Set the tool path here so every entrypoint command,
+# including non-interactive sub-agent launches, can resolve mise shims.
+export PATH="/usr/local/share/mise/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
 if ! AGENT_USER="$AGENT_USER" /usr/local/bin/agent-config-audit; then
   echo "Warning: unable to audit external configuration paths." >&2
 fi

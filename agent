@@ -1538,6 +1538,10 @@ RUN_ARGS=(
     # told the surrounding environment is already a sandbox.
     --env IS_SANDBOX=1
 
+    # Do not rely solely on the image ENV: an inherited or caller-provided
+    # PATH can otherwise hide mise-managed coding CLIs from the entry command.
+    --env "PATH=$CONTAINER_PATH"
+
     --volume "$WORKSPACE:/workspace"
 
     --volume "$AGENT_HOME/.codex:/home/agent/.codex"
