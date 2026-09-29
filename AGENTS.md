@@ -18,6 +18,10 @@ Override the image during experiments with `AI_AGENT_IMAGE=agent-container:dev` 
 
 Write portable, readable Bash while retaining the existing `#!/usr/bin/env bash` shebang and strict error handling. Quote expansions, use `[[ ... ]]` for tests, prefer descriptive uppercase names for environment-derived constants, and lowercase names for functions and locals. Indent nested shell blocks consistently with the surrounding file. Use uppercase underscore-separated Docker `ARG` and `ENV` names. Keep comments focused on intent and update command help whenever flags change.
 
+## Adding Optional Tools
+
+Optional tools follow the Terraform pattern. Give the tool an empty-default `*_VERSION` Docker `ARG`, pass it through to `ENV`, and conditionally install and verify it in the `mise` build step only when its version is non-empty. Add the matching commented setting to `versions.env_example` and document that it is omitted by default, with examples for installing an exact version or `latest`, in `README.md`. The `agent build` command already forwards non-comment entries from `versions.env` as Docker build arguments, so do not add per-tool launcher handling unless the tool needs behavior beyond installation.
+
 ## Testing Guidelines
 
 There is currently no automated test framework or coverage threshold. Every shell change should pass `bash -n` and ShellCheck. When modifying the Windows launchers, keep their option handling and defaults in parity with the Bash launcher. For launcher or image changes, build the image and smoke-test the affected flow, such as `./agent`, `./agent status`, `./agent exec git status`, and `./agent stop`. Also verify `./agent exec bash`, `agent codex`, `agent claude`, and `agent opencode` when those code paths change. Verify port-related changes with a non-default port to avoid local collisions, and test `--credentials` / `--credentials-ro` with a scratch profile directory.

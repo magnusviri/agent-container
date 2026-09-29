@@ -6,6 +6,8 @@ FROM debian:${DEBIAN_VERSION}
 ARG PYTHON_VERSION=latest
 ARG RUBY_VERSION=latest
 ARG NODE_VERSION=latest
+ARG GO_VERSION=
+ARG SWIFT_VERSION=
 ARG TERRAFORM_VERSION=
 ARG BUNDLER_VERSION=latest
 ARG CLAUDE_CODE_VERSION=latest
@@ -15,6 +17,8 @@ ARG OPENCODE_VERSION=latest
 ENV PYTHON_VERSION=${PYTHON_VERSION} \
     RUBY_VERSION=${RUBY_VERSION} \
     NODE_VERSION=${NODE_VERSION} \
+    GO_VERSION=${GO_VERSION} \
+    SWIFT_VERSION=${SWIFT_VERSION} \
     TERRAFORM_VERSION=${TERRAFORM_VERSION} \
     BUNDLER_VERSION=${BUNDLER_VERSION} \
     CLAUDE_CODE_VERSION=${CLAUDE_CODE_VERSION} \
@@ -121,6 +125,8 @@ RUN set -eux; \
     if [ -n "$PYTHON_VERSION" ]; then mise install --system "python@$PYTHON_VERSION" && mise use -g "python@$PYTHON_VERSION"; fi; \
     if [ -n "$RUBY_VERSION" ]; then mise install --system "ruby@$RUBY_VERSION" && mise use -g "ruby@$RUBY_VERSION"; fi; \
     if [ -n "$NODE_VERSION" ]; then mise install --system "node@$NODE_VERSION" && mise use -g "node@$NODE_VERSION"; fi; \
+    if [ -n "$GO_VERSION" ]; then mise install --system "go@$GO_VERSION" && mise use -g "go@$GO_VERSION"; fi; \
+    if [ -n "$SWIFT_VERSION" ]; then mise install --system "swift@$SWIFT_VERSION" && mise use -g "swift@$SWIFT_VERSION"; fi; \
     if [ -n "$TERRAFORM_VERSION" ]; then mise install --system "terraform@$TERRAFORM_VERSION" && mise use -g "terraform@$TERRAFORM_VERSION"; fi; \
     mise reshim; \
     if [ -n "$PYTHON_VERSION" ]; then \
@@ -141,6 +147,8 @@ RUN set -eux; \
         gem install standard --no-document; \
     fi; \
     if [ -n "$NODE_VERSION" ]; then node --version; fi; \
+    if [ -n "$GO_VERSION" ]; then go version; fi; \
+    if [ -n "$SWIFT_VERSION" ]; then swift --version; fi; \
     if [ -n "$TERRAFORM_VERSION" ]; then terraform --version; fi; \
     mise reshim
 
