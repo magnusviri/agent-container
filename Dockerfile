@@ -13,6 +13,10 @@ ARG BUNDLER_VERSION=latest
 ARG CLAUDE_CODE_VERSION=latest
 ARG CODEX_VERSION=latest
 ARG OPENCODE_VERSION=latest
+ARG PROJECT_VERSION=dev
+
+LABEL org.opencontainers.image.title="agent-container" \
+    org.opencontainers.image.version="${PROJECT_VERSION}"
 
 ENV PYTHON_VERSION=${PYTHON_VERSION} \
     RUBY_VERSION=${RUBY_VERSION} \
@@ -158,6 +162,17 @@ RUN set -eux; \
         if [ -n "$CLAUDE_CODE_VERSION" ]; then npm install --global "@anthropic-ai/claude-code@$CLAUDE_CODE_VERSION"; fi; \
         if [ -n "$CODEX_VERSION" ]; then npm install --global "@openai/codex@$CODEX_VERSION"; fi; \
         if [ -n "$OPENCODE_VERSION" ]; then npm install --global "opencode-ai@$OPENCODE_VERSION"; fi; \
+    fi
+
+# Keep the coding CLIs reachable when an outer agent supplies a PATH without
+# mise shims.  The links follow the versions installed by mise at build time;
+# /usr/local/bin is present in the conventional minimal PATH used by runners.
+RUN set -eux; \
+    if [ -n "$NODE_VERSION" ]; then \
+        ln -sf "$(mise which node)" /usr/local/bin/node; \
+        if [ -n "$CLAUDE_CODE_VERSION" ]; then ln -sf "$(mise which claude)" /usr/local/bin/claude; fi; \
+        if [ -n "$CODEX_VERSION" ]; then ln -sf "$(mise which codex)" /usr/local/bin/codex; fi; \
+        if [ -n "$OPENCODE_VERSION" ]; then ln -sf "$(mise which opencode)" /usr/local/bin/opencode; fi; \
     fi
 
 RUN curl -LsSf https://astral.sh/uv/install.sh | UV_NO_MODIFY_PATH=1 sh \

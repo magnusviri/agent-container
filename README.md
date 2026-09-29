@@ -238,11 +238,27 @@ Building first is optional. When a launch needs an image that does not exist,
 `agent` offers to build it automatically. In a non-interactive session, run
 `agent build` explicitly before launching.
 
-The default image name is:
+The project version is stored in [`VERSION`](VERSION). For the current release,
+the default image name is:
 
 ```text
-agent-container:latest
+agent-container:0.1.0
 ```
+
+`agent build` tags each default build with both the immutable release tag
+(`agent-container:0.1.0`) and the moving convenience tag
+(`agent-container:latest`). The launcher uses the release tag by default, so a
+newly published `latest` image does not change the image used by an existing
+checkout. Set `AI_AGENT_IMAGE` to use a custom image name or tag; custom image
+names are tagged exactly as supplied.
+
+### Releasing a new version
+
+Update `VERSION` with a SemVer version (`MAJOR.MINOR.PATCH`), commit that
+change, and create the matching Git tag (for example, `v0.2.0`). A release
+build then produces `agent-container:0.2.0` and refreshes
+`agent-container:latest`. The image also records this value in the OCI
+`org.opencontainers.image.version` label.
 
 Override it with:
 
@@ -1378,10 +1394,10 @@ export AI_AGENT_HOME="$HOME/my-agent"
 
 Controls the Docker image.
 
-Default:
+Default (using the version in `VERSION`):
 
 ```text
-agent-container:latest
+agent-container:0.1.0
 ```
 
 Example:

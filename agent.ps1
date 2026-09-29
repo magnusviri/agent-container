@@ -530,7 +530,11 @@ function Invoke-AgentBuild {
         }
     }
 
-    $arguments = @('build') + $buildArguments.ToArray() + $DockerBuildArguments + @('--tag', $script:Image, $script:AgentHome)
+    $arguments = @('build') + $buildArguments.ToArray() + @('--build-arg', "PROJECT_VERSION=$($script:ProjectVersion)") + $DockerBuildArguments + @('--tag', $script:Image)
+    if ($script:LatestImage) {
+        $arguments += @('--tag', $script:LatestImage)
+    }
+    $arguments += $script:AgentHome
     Write-CommandLog $arguments
     & docker @arguments
     if ($LASTEXITCODE -ne 0) { throw "Docker image build failed with exit code $LASTEXITCODE." }
@@ -669,7 +673,16 @@ try {
     } else {
         [System.IO.Path]::GetFullPath((Join-Path $HOME '.agent-container'))
     }
-    $script:Image = if ($env:AI_AGENT_IMAGE) { $env:AI_AGENT_IMAGE } else { 'agent-container:latest' }
+    $versionFile = Join-Path $script:AgentHome 'VERSION'
+    if (-not (Test-Path -LiteralPath $versionFile -PathType Leaf)) {
+        throw "Project version file is missing: $versionFile"
+    }
+    $script:ProjectVersion = (Get-Content -LiteralPath $versionFile -Raw).Trim()
+    if ($script:ProjectVersion -notmatch '^\d+\.\d+\.\d+(?:[-.][0-9A-Za-z.-]+)?$') {
+        throw "Invalid project version in ${versionFile}: $($script:ProjectVersion)"
+    }
+    $script:Image = if ($env:AI_AGENT_IMAGE) { $env:AI_AGENT_IMAGE } else { "agent-container:$($script:ProjectVersion)" }
+    $script:LatestImage = if ($env:AI_AGENT_IMAGE) { $null } else { 'agent-container:latest' }
     $script:VerboseLogging = $env:AI_AGENT_VERBOSE -eq '1'
     $script:SshHostPort = $env:AI_AGENT_SSH_PORT
     $script:Workspace = (Get-Item -LiteralPath (Get-Location).Path).FullName

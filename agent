@@ -6,7 +6,24 @@ set -eo pipefail
 # -----------------------------------------------------------------------------
 
 AGENT_HOME="${AI_AGENT_HOME:-$HOME/.agent-container}"
-IMAGE="${AI_AGENT_IMAGE:-agent-container:latest}"
+VERSION_FILE="$AGENT_HOME/VERSION"
+
+if [[ ! -r "$VERSION_FILE" ]]; then
+    echo "Project version file is missing: $VERSION_FILE" >&2
+    exit 1
+fi
+
+PROJECT_VERSION="$(tr -d '\r\n' < "$VERSION_FILE")"
+if [[ ! "$PROJECT_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$ ]]; then
+    echo "Invalid project version in $VERSION_FILE: $PROJECT_VERSION" >&2
+    exit 1
+fi
+
+IMAGE="${AI_AGENT_IMAGE:-agent-container:$PROJECT_VERSION}"
+LATEST_IMAGE=""
+if [[ -z "${AI_AGENT_IMAGE:-}" ]]; then
+    LATEST_IMAGE="agent-container:latest"
+fi
 
 SSH_HOST_PORT="${AI_AGENT_SSH_PORT:-}"
 FORWARD_PORTS=()
@@ -634,6 +651,11 @@ build_image() {
     local line key value
     local -a build_args=()
     local -a docker_build_args=("$@")
+    local -a image_tags=(--tag "$IMAGE")
+
+    if [[ -n "$LATEST_IMAGE" ]]; then
+        image_tags+=(--tag "$LATEST_IMAGE")
+    fi
 
     if [[ -f "$env_file" ]]; then
         while IFS= read -r line || [[ -n "$line" ]]; do
@@ -653,8 +675,9 @@ build_image() {
 
     run_docker build \
         "${build_args[@]}" \
+        --build-arg "PROJECT_VERSION=$PROJECT_VERSION" \
         "${docker_build_args[@]}" \
-        --tag "$IMAGE" \
+        "${image_tags[@]}" \
         "$AGENT_HOME"
 }
 

@@ -40,6 +40,28 @@ fi
 EOF
 chmod 0755 "$TEST_ROOT/bin/docker"
 
+DOCKER_LOG="$TEST_ROOT/bash-build-docker.log" \
+DOCKER_STATE=none \
+DOCKER_RUNTIME_STATE="$TEST_ROOT/bash-build.state" \
+PATH="$TEST_ROOT/bin:$PATH" \
+AI_AGENT_HOME="$REPOSITORY_ROOT" \
+    "$REPOSITORY_ROOT/agent" build \
+    < /dev/null > /dev/null
+
+grep -Fq "build --build-arg PROJECT_VERSION=0.1.0 --tag agent-container:0.1.0 --tag agent-container:latest $REPOSITORY_ROOT" \
+    "$TEST_ROOT/bash-build-docker.log" || fail 'Bash launcher did not apply release and latest image tags'
+
+DOCKER_LOG="$TEST_ROOT/powershell-build-docker.log" \
+DOCKER_STATE=none \
+DOCKER_RUNTIME_STATE="$TEST_ROOT/powershell-build.state" \
+PATH="$TEST_ROOT/bin:$PATH" \
+AI_AGENT_HOME="$REPOSITORY_ROOT" \
+    pwsh -NoLogo -NoProfile -File "$REPOSITORY_ROOT/agent.ps1" build \
+    < /dev/null > /dev/null
+
+grep -Fq "build --build-arg PROJECT_VERSION=0.1.0 --tag agent-container:0.1.0 --tag agent-container:latest $REPOSITORY_ROOT" \
+    "$TEST_ROOT/powershell-build-docker.log" || fail 'PowerShell launcher did not apply release and latest image tags'
+
 DOCKER_LOG="$TEST_ROOT/bash-docker.log" \
 DOCKER_STATE=running \
 DOCKER_RUNTIME_STATE="$TEST_ROOT/bash-running.state" \
