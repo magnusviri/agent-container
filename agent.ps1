@@ -453,15 +453,15 @@ function Test-CodexControlSocketIsolated {
 
     $inspectArguments = @(
         'inspect', '--format',
-        '{{range .Mounts}}{{if eq .Destination "/home/agent/.codex/app-server-control"}}{{.Type}}{{end}}{{end}}',
+        '{{range .Mounts}}{{if and (eq .Destination "/home/agent/.codex/app-server-control") (eq .Type "tmpfs")}}true{{end}}{{end}}{{range $destination, $_ := .HostConfig.Tmpfs}}{{if eq $destination "/home/agent/.codex/app-server-control"}}true{{end}}{{end}}',
         $Container
     )
     Write-CommandLog $inspectArguments
-    $mountType = & docker @inspectArguments
+    $isolationMount = & docker @inspectArguments
     if ($LASTEXITCODE -ne 0) {
         throw "Unable to inspect container $Container."
     }
-    return (@($mountType) -join "`n").Trim() -eq 'tmpfs'
+    return ((@($isolationMount) -join "`n").Trim() -match 'true')
 }
 
 function Assert-CodexControlSocketIsolated {

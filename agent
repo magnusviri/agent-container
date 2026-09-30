@@ -528,12 +528,17 @@ find_existing_container() {
 
 codex_control_socket_isolated() {
     local container="$1"
-    local mount_type
+    local isolation_mount
 
-    mount_type="$(run_docker inspect --format \
-        '{{range .Mounts}}{{if eq .Destination "/home/agent/.codex/app-server-control"}}{{.Type}}{{end}}{{end}}' \
+    # Docker exposes tmpfs mounts created with --mount in .Mounts, but records
+    # mounts created with its legacy --tmpfs flag in HostConfig.Tmpfs. The
+    # launcher uses --tmpfs so checking only .Mounts falsely rejects every
+    # container it creates.
+    # shellcheck disable=SC2016 # Docker's Go template requires literal $ variables.
+    isolation_mount="$(run_docker inspect --format \
+        '{{range .Mounts}}{{if and (eq .Destination "/home/agent/.codex/app-server-control") (eq .Type "tmpfs")}}true{{end}}{{end}}{{range $destination, $_ := .HostConfig.Tmpfs}}{{if eq $destination "/home/agent/.codex/app-server-control"}}true{{end}}{{end}}' \
         "$container")"
-    [[ "$mount_type" == "tmpfs" ]]
+    [[ "$isolation_mount" == *true* ]]
 }
 
 codex_control_socket_requires_new_container() {
