@@ -210,8 +210,8 @@ main() {
         return 1
     fi
     if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-        echo "Ralph requires a Git repository in $WORKSPACE." >&2
-        return 1
+        echo "Initializing Git repository in $WORKSPACE."
+        git init || return
     fi
     if ! command -v "$tool" >/dev/null 2>&1; then
         echo "Required agent CLI is not installed: $tool" >&2

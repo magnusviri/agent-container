@@ -124,4 +124,11 @@ if PATH="$MOCK_BIN:$PATH" RALPH_WORKSPACE="$invalid_workspace" "$RALPH" --tool c
     fail 'invalid tasks.json was accepted'
 fi
 
+non_git_workspace="$TEST_ROOT/non-git"
+mkdir -p "$non_git_workspace"
+RALPH_WORKSPACE="$non_git_workspace" "$RALPH" init >/dev/null
+write_tasks "$non_git_workspace"
+PATH="$MOCK_BIN:$PATH" RALPH_WORKSPACE="$non_git_workspace" "$RALPH" --tool codex 1 >/dev/null
+git -C "$non_git_workspace" rev-parse --is-inside-work-tree >/dev/null 2>&1 || fail 'non-Git workspace was not initialized'
+
 echo 'Ralph tests passed.'
