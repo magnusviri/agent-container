@@ -138,12 +138,15 @@ ENV PYTHON_VERSION=${PYTHON_VERSION} \
     GO_VERSION=${GO_VERSION} \
     SWIFT_VERSION=${SWIFT_VERSION} \
     TERRAFORM_VERSION=${TERRAFORM_VERSION} \
-    BUNDLER_VERSION=${BUNDLER_VERSION} \
     CLAUDE_CODE_VERSION=${CLAUDE_CODE_VERSION} \
     CODEX_VERSION=${CODEX_VERSION} \
     OPENCODE_VERSION=${OPENCODE_VERSION}
 
+# RubyGems treats BUNDLER_VERSION as an exact version selector. Keep the build
+# setting out of its environment so the special "latest" value is safe.
 RUN set -eux; \
+    configured_bundler_version="$BUNDLER_VERSION"; \
+    unset BUNDLER_VERSION; \
     if [ -n "$PYTHON_VERSION" ]; then mise install --system "python@$PYTHON_VERSION" && mise use -g "python@$PYTHON_VERSION"; fi; \
     if [ -n "$RUBY_VERSION" ]; then mise install --system "ruby@$RUBY_VERSION" && mise use -g "ruby@$RUBY_VERSION"; fi; \
     if [ -n "$NODE_VERSION" ]; then mise install --system "node@$NODE_VERSION" && mise use -g "node@$NODE_VERSION"; fi; \
@@ -158,11 +161,11 @@ RUN set -eux; \
     if [ -n "$RUBY_VERSION" ]; then \
         ruby --version; \
         gem --version; \
-        if [ -n "$BUNDLER_VERSION" ]; then \
-            if [ "$BUNDLER_VERSION" = "latest" ]; then \
+        if [ -n "$configured_bundler_version" ]; then \
+            if [ "$configured_bundler_version" = "latest" ]; then \
                 gem install bundler --no-document; \
             else \
-                gem install bundler -v "$BUNDLER_VERSION" --no-document; \
+                gem install bundler -v "$configured_bundler_version" --no-document; \
             fi; \
             bundle --version; \
         fi; \
@@ -275,6 +278,7 @@ RUN chmod 0755 \
       /usr/local/bin/ralph
 
 RUN set -eux; \
+    unset BUNDLER_VERSION; \
     test -x /usr/sbin/chpasswd; \
     agent-config-audit >/dev/null; \
     python --version; \
