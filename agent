@@ -163,8 +163,9 @@ Behavior:
 
         ~/.agent-container/bin
 
-      and appends that directory to PATH in ~/.zshrc when it is not already
-      present. Run it again to refresh the shortcuts and PATH entry.
+      and appends that directory to PATH in the current shell's startup file
+      (~/.bashrc for Bash or ~/.zshrc for Zsh) when it is not already present.
+      Run it again to refresh the shortcuts and PATH entry.
 
   agent codex
       Start Codex in a new agent container.
@@ -486,6 +487,37 @@ resolve_realpath() {
     done
 
     printf '%s\n' "$directory/$file"
+}
+
+current_shell_name() {
+    local shell_name
+
+    # SHELL reports the login shell and can be stale when a user starts another
+    # shell. Prefer the process that invoked this script when it is supported.
+    shell_name="$(ps -p "$PPID" -o comm= 2>/dev/null || true)"
+    shell_name="$(basename "${shell_name#-}")"
+    shell_name="${shell_name%.exe}"
+
+    case "$shell_name" in
+        bash|zsh)
+            printf '%s\n' "$shell_name"
+            return
+            ;;
+    esac
+
+    shell_name="$(basename "${SHELL:-}")"
+    shell_name="${shell_name#-}"
+    shell_name="${shell_name%.exe}"
+
+    case "$shell_name" in
+        bash|zsh)
+            printf '%s\n' "$shell_name"
+            ;;
+        *)
+            echo "Unable to determine a supported current shell (Bash or Zsh)." >&2
+            return 1
+            ;;
+    esac
 }
 
 find_available_ssh_port() {
@@ -1017,7 +1049,15 @@ if [[ ${#COMMAND[@]} -gt 0 ]]; then
         init)
             SCRIPT_PATH="$(resolve_realpath "$0")"
             BIN_DIR="$AGENT_HOME/bin"
-            ZSHRC="${ZDOTDIR:-$HOME}/.zshrc"
+            CURRENT_SHELL="$(current_shell_name)" || exit 1
+            case "$CURRENT_SHELL" in
+                bash)
+                    SHELL_RC="$HOME/.bashrc"
+                    ;;
+                zsh)
+                    SHELL_RC="${ZDOTDIR:-$HOME}/.zshrc"
+                    ;;
+            esac
             PATH_EXPORT="export PATH=\"${BIN_DIR}:\$PATH\""
 
             mkdir -p "$BIN_DIR"
@@ -1025,11 +1065,11 @@ if [[ ${#COMMAND[@]} -gt 0 ]]; then
             ln -sf "$SCRIPT_PATH" "$BIN_DIR/agent"
             ln -sf "$SCRIPT_PATH" "$BIN_DIR/agent-container"
 
-            if [[ -f "$ZSHRC" ]] && grep -Fq "$PATH_EXPORT" "$ZSHRC"; then
-                echo "PATH entry already present in $ZSHRC."
+            if [[ -f "$SHELL_RC" ]] && grep -Fq "$PATH_EXPORT" "$SHELL_RC"; then
+                echo "PATH entry already present in $SHELL_RC."
             else
-                printf '\n# agent-container launcher\n%s\n' "$PATH_EXPORT" >> "$ZSHRC"
-                echo "Added PATH entry to $ZSHRC."
+                printf '\n# agent-container launcher\n%s\n' "$PATH_EXPORT" >> "$SHELL_RC"
+                echo "Added PATH entry to $SHELL_RC."
             fi
 
             echo
@@ -1037,7 +1077,7 @@ if [[ ${#COMMAND[@]} -gt 0 ]]; then
             echo "  $BIN_DIR/agent"
             echo "  $BIN_DIR/agent-container"
             echo
-            echo "Restart your shell or run: source $ZSHRC"
+            echo "Restart your shell or run: source $SHELL_RC"
             echo "Then use 'agent' from anywhere."
             exit 0
             ;;
