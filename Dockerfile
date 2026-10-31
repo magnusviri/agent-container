@@ -128,6 +128,7 @@ ARG RUBY_VERSION=latest
 ARG NODE_VERSION=latest
 ARG GO_VERSION=
 ARG SWIFT_VERSION=
+ARG DOTNET_VERSION=
 ARG TERRAFORM_VERSION=
 ARG HF_VERSION=latest
 ARG BUNDLER_VERSION=latest
@@ -140,6 +141,7 @@ ENV PYTHON_VERSION=${PYTHON_VERSION} \
     NODE_VERSION=${NODE_VERSION} \
     GO_VERSION=${GO_VERSION} \
     SWIFT_VERSION=${SWIFT_VERSION} \
+    DOTNET_VERSION=${DOTNET_VERSION} \
     TERRAFORM_VERSION=${TERRAFORM_VERSION} \
     HF_VERSION=${HF_VERSION} \
     CLAUDE_CODE_VERSION=${CLAUDE_CODE_VERSION} \
@@ -156,6 +158,7 @@ RUN set -eux; \
     if [ -n "$NODE_VERSION" ]; then mise install --system "node@$NODE_VERSION" && mise use -g "node@$NODE_VERSION"; fi; \
     if [ -n "$GO_VERSION" ]; then mise install --system "go@$GO_VERSION" && mise use -g "go@$GO_VERSION"; fi; \
     if [ -n "$SWIFT_VERSION" ]; then mise install --system "swift@$SWIFT_VERSION" && mise use -g "swift@$SWIFT_VERSION"; fi; \
+    if [ -n "$DOTNET_VERSION" ]; then mise install --system "dotnet@$DOTNET_VERSION" && mise use -g "dotnet@$DOTNET_VERSION"; fi; \
     if [ -n "$TERRAFORM_VERSION" ]; then mise install --system "terraform@$TERRAFORM_VERSION" && mise use -g "terraform@$TERRAFORM_VERSION"; fi; \
     mise reshim; \
     if [ -n "$PYTHON_VERSION" ]; then \
@@ -178,6 +181,7 @@ RUN set -eux; \
     if [ -n "$NODE_VERSION" ]; then node --version; fi; \
     if [ -n "$GO_VERSION" ]; then go version; fi; \
     if [ -n "$SWIFT_VERSION" ]; then swift --version; fi; \
+    if [ -n "$DOTNET_VERSION" ]; then dotnet --version; fi; \
     if [ -n "$TERRAFORM_VERSION" ]; then terraform --version; fi; \
     mise reshim
 

@@ -95,6 +95,7 @@ OpenCode
 Python (managed by mise)
 Ruby / Bundler (managed by mise)
 Node.js / npm (managed by mise)
+.NET SDK / C# (optional, managed by mise)
 uv
 hf (Hugging Face CLI)
 PowerShell
@@ -970,11 +971,11 @@ the launcher will ask you to run `agent delete` before it starts one of them.
 
 The Dockerfile installs the latest version of each configurable language runtime,
 coding agent, and the Hugging Face `hf` CLI by default. Language runtimes, Go,
-Swift, and Terraform are installed with `mise`; `hf` is installed with `uv`.
+Swift, .NET, and Terraform are installed with `mise`; `hf` is installed with `uv`.
 Every tool setting accepts an exact version, `latest`, or an empty value. An
-empty value omits that tool from the image. Go, Swift, and Terraform are omitted
-by default; set `GO_VERSION`, `SWIFT_VERSION`, or `TERRAFORM_VERSION` to an exact
-version or `latest` to install it. Debian remains a required base image and
+empty value omits that tool from the image. Go, Swift, .NET, and Terraform are
+omitted by default; set `GO_VERSION`, `SWIFT_VERSION`, `DOTNET_VERSION`, or
+`TERRAFORM_VERSION` to an exact version or `latest` to install it. Debian remains a required base image and
 continues to use its configured image tag. You do not need a `versions.env` file
 unless you want to pin, update, or omit one or more tools.
 
@@ -1009,12 +1010,13 @@ Or omit a tool entirely:
 OPENCODE_VERSION=
 ```
 
-To install Go, Swift, or Terraform, set its version explicitly or request the
+To install Go, Swift, .NET, or Terraform, set its version explicitly or request the
 latest release:
 
 ```dotenv
 GO_VERSION=latest
 SWIFT_VERSION=latest
+DOTNET_VERSION=latest
 TERRAFORM_VERSION=latest
 ```
 
