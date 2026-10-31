@@ -127,6 +127,7 @@ ARG NODE_VERSION=latest
 ARG GO_VERSION=
 ARG SWIFT_VERSION=
 ARG TERRAFORM_VERSION=
+ARG HF_VERSION=latest
 ARG BUNDLER_VERSION=latest
 ARG CLAUDE_CODE_VERSION=latest
 ARG CODEX_VERSION=latest
@@ -138,6 +139,7 @@ ENV PYTHON_VERSION=${PYTHON_VERSION} \
     GO_VERSION=${GO_VERSION} \
     SWIFT_VERSION=${SWIFT_VERSION} \
     TERRAFORM_VERSION=${TERRAFORM_VERSION} \
+    HF_VERSION=${HF_VERSION} \
     CLAUDE_CODE_VERSION=${CLAUDE_CODE_VERSION} \
     CODEX_VERSION=${CODEX_VERSION} \
     OPENCODE_VERSION=${OPENCODE_VERSION}
@@ -176,6 +178,13 @@ RUN set -eux; \
     if [ -n "$SWIFT_VERSION" ]; then swift --version; fi; \
     if [ -n "$TERRAFORM_VERSION" ]; then terraform --version; fi; \
     mise reshim
+
+RUN set -eux; \
+    if [ -n "$HF_VERSION" ]; then \
+        if [ "$HF_VERSION" = "latest" ]; then hf_package="hf"; else hf_package="hf==$HF_VERSION"; fi; \
+        UV_TOOL_DIR=/usr/local/share/uv/tools UV_TOOL_BIN_DIR=/usr/local/bin uv tool install "$hf_package"; \
+        hf version; \
+    fi
 
 RUN set -eux; \
     if [ -n "$NODE_VERSION" ]; then \

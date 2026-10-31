@@ -50,6 +50,7 @@ Python (managed by mise)
 Ruby / Bundler (managed by mise)
 Node.js / npm (managed by mise)
 uv
+hf (Hugging Face CLI)
 PowerShell
 
 shfmt (Bash and POSIX shell)
@@ -1004,15 +1005,15 @@ the launcher will ask you to run `agent delete` before it starts one of them.
 
 ## Version configuration
 
-The Dockerfile installs the latest version of each configurable language runtime
-and coding agent by default. Language runtimes, Go, Swift, and Terraform are
-installed with `mise`. Every tool setting accepts an exact version, `latest`,
-or an empty value. An empty value omits that tool from the image. Go, Swift,
-and Terraform are omitted by default; set `GO_VERSION`, `SWIFT_VERSION`, or
-`TERRAFORM_VERSION` to an exact version or `latest` to install it. Debian
-remains a required base image and continues to use its configured image tag. You
-do not need a `versions.env` file unless you want to pin, update, or omit one or
-more tools.
+The Dockerfile installs the latest version of each configurable language runtime,
+coding agent, and the Hugging Face `hf` CLI by default. Language runtimes, Go,
+Swift, and Terraform are installed with `mise`; `hf` is installed with `uv`.
+Every tool setting accepts an exact version, `latest`, or an empty value. An
+empty value omits that tool from the image. Go, Swift, and Terraform are omitted
+by default; set `GO_VERSION`, `SWIFT_VERSION`, or `TERRAFORM_VERSION` to an exact
+version or `latest` to install it. Debian remains a required base image and
+continues to use its configured image tag. You do not need a `versions.env` file
+unless you want to pin, update, or omit one or more tools.
 
 This project is intended to make it easy to tailor and build an agent image
 locally for your own environment. It is not intended to produce Docker images
