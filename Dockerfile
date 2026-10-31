@@ -27,6 +27,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     util-linux \
     procps \
     file \
+    imagemagick \
     less \
     vim \
     tree \
@@ -78,6 +79,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     shfmt \
     clang-format \
     sqlite3 \
+    tesseract-ocr \
     rsync \
     ansible \
     docker.io \

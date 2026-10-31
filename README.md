@@ -74,6 +74,8 @@ ripgrep
 minify
 find
 file
+ImageMagick
+Tesseract OCR
 tree
 less
 vim
