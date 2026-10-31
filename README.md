@@ -83,6 +83,147 @@ the container. The Windows launcher also compensates when Git checks the shared
 instruction symlinks out as plain placeholder files, without modifying the
 checkout.
 
+## Basic usage
+
+Move into any project:
+
+```bash
+cd ~/src/my-project
+```
+
+On Windows, change to a Windows project directory:
+
+```powershell
+Set-Location "$HOME\src\my-project"
+```
+
+Then launch an agent.
+
+```bash
+agent
+```
+
+If you don't specify ports, it will ask this:
+
+```
+Are you sure you don't want to publish any ports? Once created, ports cannot be added later. [y/N]
+```
+
+The reason is that once you create the container, you can't add ports after the fact.
+
+Then you'll have a shell in the container. Run your favorite agent.
+
+```
+claude
+codex
+opencode
+```
+
+When you're done, press ctrl-c to exit the agent, then type `exit` to leave the container. It will then ask:
+
+```
+Keep or delete the stopped agent container? [K/d]
+```
+
+The purpose for this is so that you don't leave old containers everywhere (I was, so I added it). The only reason you'd want to keep it is if you've made changes in the container that you want to keep.
+
+### Command overview
+
+| Command | Purpose |
+| --- | --- |
+| `agent` | Start or attach to an interactive Bash shell for this workspace. |
+| `agent codex`, `agent claude`, `agent opencode` | Start the named coding agent. |
+| `agent exec [command...]` | Run a command as the unprivileged `agent` user in a running workspace container; no command opens Bash. Start the container with `agent` first, if needed. |
+| `agent root [command...]` | Run a maintenance command as root in a running workspace container; no command opens a root shell. |
+| `agent tunnel` | Open SSH tunnels configured when the container was created with `--forward-port`. |
+| `agent status`, `agent list` (or `agent ls`), `agent stop`, `agent delete` | Inspect or manage workspace containers. |
+| `agent build [docker-build-options...]` / `agent init` | Build the image or install launcher shortcuts. |
+
+`agent` identifies a workspace from its physical current-directory path. Its
+container is reused when it is running or has been kept after stopping. Docker
+port mappings and credential mounts are fixed when a container is created;
+delete the workspace container before changing either.
+
+### Codex
+
+```bash
+agent codex
+```
+
+The launcher runs Codex with `--sandbox danger-full-access --no-daemon` by
+default. The container provides the outer isolation boundary, and avoiding
+Codex's managed background daemon prevents excessive host load from its
+runtime activity on host-backed filesystems. Pass an explicit `--sandbox` (or
+`-s`) option after `codex` to override the sandbox default.
+
+The same default applies inside the container. Interactive container shells
+define a `codex` wrapper, so typing `codex` in a shell behaves like
+`agent codex`. Passing an explicit `--sandbox` option still overrides that
+default. Use `command codex` if you deliberately need Codex's managed daemon.
+
+When Codex requires browser authentication, start it with
+`agent --forward-port 1455 codex`. See
+[SSH port forwarding](#ssh-port-forwarding) for the full login flow. A normal
+`agent codex` no longer starts an SSH server or publishes authentication ports.
+
+### Claude Code
+
+```bash
+agent claude
+```
+
+The launcher runs Claude Code with `--dangerously-skip-permissions` by default
+because the container provides the outer isolation boundary. Pass an explicit
+`--permission-mode` option after `claude` to override this default.
+
+Claude Code refuses that flag while running as root, so the launcher starts
+every container with `IS_SANDBOX=1`, the environment variable that tells Claude
+Code its surroundings are already sandboxed. The launcher then drops privileges
+and runs Claude Code as the unprivileged `agent` user, so the flag is accepted.
+
+The container shell applies the same default. Interactive container shells
+define a `claude` wrapper, so typing `claude` in a shell behaves like
+`agent claude`. Passing an explicit `--permission-mode` option still overrides
+it.
+
+### OpenCode
+
+```bash
+agent opencode
+```
+
+The launcher runs OpenCode with `--dangerously-skip-permissions` by default
+because the container provides the outer isolation boundary. Pass an explicit
+`--auto`, `--yolo`, or `--dangerously-skip-permissions` option after `opencode`
+to override this default.
+
+The same default applies inside the container. Interactive container shells
+define an `opencode` wrapper, so typing `opencode` in a shell behaves like
+`agent opencode`. Passing an explicit `--auto`, `--yolo`, or
+`--dangerously-skip-permissions` option still overrides it.
+
+### Generic shell
+
+```bash
+agent
+```
+
+If no container is running for the current project, this starts a new container with Bash.
+
+If a container is already running for that project, it attaches to the running container using:
+
+```bash
+docker exec -it --user agent --env HOME=/home/agent <container-id> bash
+```
+
+If a stopped container exists for the project, it is started automatically
+instead of creating a new one. The container stays up while interactive
+terminals are attached and is stopped once the last interactive terminal exits.
+The launcher then asks whether to keep the stopped container for later reuse or
+delete it. Keeping it is the default.
+
+This makes it easy to open multiple terminals into the same agent environment.
+
 ## Features
 
 The image provides a consistent toolchain for coding agents, including:
@@ -219,193 +360,6 @@ $env:AI_AGENT_IMAGE = 'my-agent:latest'
 agent build
 ```
 
-## Basic usage
-
-Move into any project:
-
-```bash
-cd ~/src/my-project
-```
-
-On Windows, use the same `agent` commands from PowerShell after changing to a
-Windows project directory:
-
-```powershell
-Set-Location "$HOME\src\my-project"
-```
-
-Then launch an agent.
-
-### Command overview
-
-Launcher options come before the command. Use `--` when the command itself
-starts with an option, for example `agent -- --help`.
-
-| Command | Purpose |
-| --- | --- |
-| `agent` | Start or attach to an interactive Bash shell for this workspace. |
-| `agent codex`, `agent claude`, `agent opencode` | Start the named coding agent. |
-| `agent <command...>` | Run a custom command when creating a new workspace container. Once a container is running, use `agent exec <command...>` instead. |
-| `agent exec [command...]` | Run a command as the unprivileged `agent` user in a running workspace container; no command opens Bash. |
-| `agent root [command...]` | Run a maintenance command as root in a running workspace container; no command opens a root shell. |
-| `agent ralph init` / `agent ralph --tool TOOL [max_iterations]` | Initialize or run the fresh-context Ralph loop. |
-| `agent tunnel` | Open SSH tunnels configured when the container was created with `--forward-port`. |
-| `agent status`, `agent list` (or `agent ls`), `agent stop`, `agent delete` | Inspect or manage workspace containers. |
-| `agent build [docker-build-options...]` / `agent init` | Build the image or install launcher shortcuts. |
-
-`agent` identifies a workspace from its physical current-directory path. Its
-container is reused when it is running or has been kept after stopping. Docker
-port mappings and credential mounts are fixed when a container is created;
-delete the workspace container before changing either.
-
-### Codex
-
-```bash
-agent codex
-```
-
-The launcher runs Codex with `--sandbox danger-full-access --no-daemon` by
-default. The container provides the outer isolation boundary, and avoiding
-Codex's managed background daemon prevents excessive host load from its
-runtime activity on host-backed filesystems. Pass an explicit `--sandbox` (or
-`-s`) option after `codex` to override the sandbox default.
-
-The same default applies inside the container. Interactive container shells
-define a `codex` wrapper, so typing `codex` in a shell behaves like
-`agent codex`. Passing an explicit `--sandbox` option still overrides that
-default. Use `command codex` if you deliberately need Codex's managed daemon.
-
-When Codex requires browser authentication, start it with
-`agent --forward-port 1455 codex`. See
-[SSH port forwarding](#ssh-port-forwarding) for the full login flow. A normal
-`agent codex` no longer starts an SSH server or publishes authentication ports.
-
-### Claude Code
-
-```bash
-agent claude
-```
-
-The launcher runs Claude Code with `--dangerously-skip-permissions` by default
-because the container provides the outer isolation boundary. Pass an explicit
-`--permission-mode` option after `claude` to override this default.
-
-Claude Code refuses that flag while running as root, so the launcher starts
-every container with `IS_SANDBOX=1`, the environment variable that tells Claude
-Code its surroundings are already sandboxed. The launcher then drops privileges
-and runs Claude Code as the unprivileged `agent` user, so the flag is accepted.
-
-The container shell applies the same default. Interactive container shells
-define a `claude` wrapper, so typing `claude` in a shell behaves like
-`agent claude`. Passing an explicit `--permission-mode` option still overrides
-it.
-
-### OpenCode
-
-```bash
-agent opencode
-```
-
-The launcher runs OpenCode with `--dangerously-skip-permissions` by default
-because the container provides the outer isolation boundary. Pass an explicit
-`--auto`, `--yolo`, or `--dangerously-skip-permissions` option after `opencode`
-to override this default.
-
-The same default applies inside the container. Interactive container shells
-define an `opencode` wrapper, so typing `opencode` in a shell behaves like
-`agent opencode`. Passing an explicit `--auto`, `--yolo`, or
-`--dangerously-skip-permissions` option still overrides it.
-
-### Ralph loop
-
-Ralph runs one task at a time in a fresh Codex, Claude Code, or OpenCode
-process. Code changes, the task queue, and a progress log carry context between
-iterations; agent conversation history does not.
-
-Authenticate the selected backend before leaving it unattended. Ralph reuses
-the same persisted Codex, Claude Code, and OpenCode state as interactive agent
-sessions; it does not perform an interactive login during the loop.
-
-Initialize a project from the host:
-
-```bash
-agent ralph init
-```
-
-This creates missing files without replacing existing ones:
-
-```text
-AGENTS-RALPH.md          Ralph-only operating instructions
-tasks.json               local task queue
-progress.md              local progress and reusable learnings
-```
-
-The initializer adds `/tasks.json` and `/progress.md` to the project's
-`.gitignore`. Commit `AGENTS-RALPH.md` when the project should share its
-Ralph behavior.
-
-Ask an agent to inspect the project and prepare the task queue before starting
-the loop. The container instructions include the full schema and planning
-rules. A suitable prompt is:
-
-```text
-Inspect this repository and create /workspace/tasks.json for Ralph to
-implement: <describe the feature>. Follow the "Creating Ralph tasks.json"
-instructions in /usr/local/share/agent-container/AGENTS.md. Do not
-implement the tasks.
-```
-
-Then select a backend and optionally set the maximum number of iterations
-(default 10):
-
-```bash
-agent ralph --tool codex
-agent ralph --tool claude 20
-agent ralph --tool opencode
-```
-
-If a matching container is already running, `agent ralph` executes there. If a
-stopped container exists, the launcher starts and reuses it. Otherwise, the
-launcher creates a reusable workspace container, runs Ralph inside it, and
-stops it when the loop exits. The launcher then offers the normal choice to
-keep or delete the stopped container.
-
-From a shell already inside the container, use the same loop directly without
-Docker:
-
-```bash
-ralph init
-ralph --tool codex
-ralph --tool claude 20
-ralph --tool opencode
-```
-
-Every iteration starts a new non-interactive backend process and works on one
-highest-priority story whose `passes` value is `false`. The loop succeeds only
-after every story passes and the agent emits `<promise>COMPLETE</promise>`.
-
-### Generic shell
-
-```bash
-agent
-```
-
-If no container is running for the current project, this starts a new container with Bash.
-
-If a container is already running for that project, it attaches to the running container using:
-
-```bash
-docker exec -it --user agent --env HOME=/home/agent <container-id> bash
-```
-
-If a stopped container exists for the project, it is started automatically
-instead of creating a new one. The container stays up while interactive
-terminals are attached and is stopped once the last interactive terminal exits.
-The launcher then asks whether to keep the stopped container for later reuse or
-delete it. Keeping it is the default.
-
-This makes it easy to open multiple terminals into the same agent environment.
-
 ## Workspace-specific containers
 
 Containers are associated with the physical path of the current working directory.
@@ -445,7 +399,7 @@ pwd -P
 
 and labels the Docker container accordingly.
 
-## Running commands in an existing container
+## Running commands in a container
 
 Use:
 
@@ -454,7 +408,9 @@ agent exec COMMAND...
 ```
 
 Commands run as the unprivileged `agent` user, including sessions opened from
-a second terminal window.
+a second terminal window. Custom `agent COMMAND...` invocations are not
+supported. If the workspace container is not running, start it with `agent`
+before using `agent exec`.
 
 For example:
 

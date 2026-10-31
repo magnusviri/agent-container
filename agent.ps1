@@ -7,11 +7,9 @@ $ContainerPath = '/usr/local/share/mise/shims:/usr/local/sbin:/usr/local/bin:/us
 function Show-Usage {
     @'
 Usage:
-  agent [options] [--] [command...]
+  agent [options] [codex|claude|opencode] [args...]
   agent init
   agent build [docker-build-options...]
-  agent ralph init
-  agent ralph --tool <codex|claude|opencode> [max_iterations]
   agent exec [command...]
   agent root [command...]
   agent stop
@@ -78,13 +76,6 @@ Behavior:
       OpenCode defaults to --dangerously-skip-permissions because the
       container provides the outer isolation boundary. Pass --auto, --yolo,
       or --dangerously-skip-permissions after opencode to override.
-
-  agent ralph
-      Start the fresh-context Ralph loop in the workspace container.
-
-      Use 'agent ralph init' once to create the workspace instruction, task,
-      and progress files. Select an agent with --tool. If the workspace
-      container is already running, Ralph starts inside that container.
 
   agent exec COMMAND...
       Execute COMMAND as the unprivileged 'agent' user inside the running
@@ -256,14 +247,6 @@ Examples:
   agent claude
 
   agent opencode
-
-  agent ralph init
-
-  agent ralph --tool codex
-
-  agent ralph --tool claude 20
-
-  agent ralph --tool opencode
 
   agent -p 3000 codex
 
@@ -906,25 +889,8 @@ try {
         Invoke-Docker @('ps', '--filter', 'label=agent-container=true', '--format', $listFormat)
     }
 
-    if ($builtIn -eq 'ralph') {
-        $ralphContainer = Get-MatchingContainer
-        if ($ralphContainer) {
-            Assert-CodexControlSocketIsolated $ralphContainer
-            if ($CredentialsRequested) {
-                throw 'Credential mounts require a new container. Run agent stop first.'
-            }
-            if ($ExtraPorts.Count -and -not (Test-RequestedPortsConfigured $ralphContainer $ExtraPorts)) {
-                Throw-PortsRequireNewContainer
-            }
-            if ($ForwardPorts.Count -and -not (Test-RequestedForwardsConfigured $ralphContainer $ForwardPorts)) {
-                Throw-ForwardsRequireNewContainer
-            }
-            $ralphArguments = @('exec', '--interactive')
-            if (-not [Console]::IsInputRedirected -and -not [Console]::IsOutputRedirected) { $ralphArguments += '--tty' }
-            $ralphArguments += @('--user', 'agent', '--env', 'HOME=/home/agent', '--workdir', '/workspace', '--env', "PATH=$ContainerPath", $ralphContainer)
-            $ralphArguments += $Command
-            Invoke-Docker $ralphArguments
-        }
+    if ($Command.Count -and $builtIn -notin @('codex', 'claude', 'opencode')) {
+        throw "Custom commands must use 'agent exec <command...>'. Start the workspace container with 'agent' first, if needed."
     }
 
     $runningContainer = Get-MatchingContainer
@@ -1001,16 +967,6 @@ try {
         if ($LASTEXITCODE -ne 0) { throw "Unable to start container $existingContainer." }
         Write-PublishedPorts $existingContainer
 
-        if ($builtIn -eq 'ralph') {
-            Write-Output 'Starting Ralph in existing container...'
-            $ralphArguments = @('exec', '--interactive')
-            $interactive = -not [Console]::IsInputRedirected -and -not [Console]::IsOutputRedirected
-            if ($interactive) { $ralphArguments += '--tty' }
-            $ralphArguments += @('--user', 'agent', '--env', 'HOME=/home/agent', '--workdir', '/workspace', '--env', "PATH=$ContainerPath", $existingContainer)
-            $ralphArguments += $Command
-            Invoke-InteractiveDocker $ContainerName $ralphArguments
-        }
-
         Write-Output 'Attaching to existing container...'
         $execArguments = @('exec', '--interactive')
         $interactive = -not [Console]::IsInputRedirected -and -not [Console]::IsOutputRedirected
@@ -1047,7 +1003,7 @@ try {
 
     if ($ForwardPorts.Count) { $PublishSsh = $true }
 
-    if (-not $ExtraPorts.Count -and -not $PublishSsh -and $builtIn -ne 'ralph') {
+    if (-not $ExtraPorts.Count -and -not $PublishSsh) {
         Confirm-NoPublishedPorts
     }
 
@@ -1169,35 +1125,6 @@ try {
     }
     if (-not $publishedPortCount) { Write-Output '  (none)' }
     $DockerRunArguments | ForEach-Object { $runArguments.Add($_) }
-
-    if ($builtIn -eq 'ralph') {
-        $runArguments.Add('--detach')
-        $runArguments.Add($script:Image)
-        $runArguments.Add('sleep')
-        $runArguments.Add('infinity')
-
-        Add-SessionMarker $ContainerName
-        $exitCode = 1
-        try {
-            Write-CommandLog $runArguments.ToArray()
-            & docker @($runArguments.ToArray()) | Out-Null
-            if ($LASTEXITCODE -ne 0) {
-                throw "Unable to start Ralph container; Docker exited with code $LASTEXITCODE."
-            }
-
-            $ralphArguments = @('exec', '--interactive')
-            if (-not [Console]::IsInputRedirected -and -not [Console]::IsOutputRedirected) { $ralphArguments += '--tty' }
-            $ralphArguments += @('--user', 'agent', '--env', 'HOME=/home/agent', '--workdir', '/workspace', '--env', "PATH=$ContainerPath", $ContainerName)
-            $ralphArguments += $Command
-            Write-CommandLog $ralphArguments
-            & docker @ralphArguments
-            $exitCode = $LASTEXITCODE
-        }
-        finally {
-            Remove-SessionMarker $ContainerName
-        }
-        exit $exitCode
-    }
 
     $runArguments.Add($script:Image)
     $Command | ForEach-Object { $runArguments.Add($_) }
