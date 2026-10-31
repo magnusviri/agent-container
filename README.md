@@ -12,6 +12,8 @@ container.
 The image size depends on the platform and selected tool versions; expect several
 gigabytes of local Docker storage.
 
+A lot of this project is vibe coded. I apologize if the README doesn't match the actual tool. It all moves kind of fast and until someone else starts using this, I am focusing on making it as useful as possible to myself.
+
 ## Requirements
 
 Install Docker Engine or Docker Desktop and make sure its daemon is running.
