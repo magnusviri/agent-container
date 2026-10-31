@@ -1,51 +1,97 @@
 # Agent Container
 
-A reusable Docker-based development environment optimized for AI coding agents.
-
-It provides a consistent toolchain for:
-
-* OpenAI Codex
-* Claude Code
-* OpenCode
-* Python
-* Ruby
-* Bundler
-* Node.js / npm
-* PowerShell
-* Git
-* GitHub CLI
-* Ansible
-* Minify
-* Docker CLI
-* SSH client and server
-* native compilation
-* debugging
-* repository inspection
-* networking
-* shell/static-analysis utilities
-* code formatters for the included language toolchains
+A reusable Docker-based development environment for AI coding agents. It keeps the
+toolchain out of the host system and mounts only the current project directory into the
+container by default.
 
 The container can be launched from **any project directory** just by typing
 `agent` in a terminal. The current directory is mounted as `/workspace`, while
 AI-agent configuration and authentication state persist outside the disposable
 container.
 
-The final image size varies with the host platform and selected dependency
-versions but is about 4 GB on my computer.
+The image size depends on the platform and selected tool versions; expect several
+gigabytes of local Docker storage.
 
-_Side note, this started as a simple setup. Then I used ChatGPT to vastly improve
-it. And then I pointed this very agent-container at it's own repo and now look at it now.
-It absolutely blew up in complexity and functionality. That is what I call recursive
-improvement._
+## Requirements
 
-Extra side note: I have not tested the Windows or Claude functionality. It should work,
-but I wouldn't be surprised if there are errors.
+Install Docker Engine or Docker Desktop and make sure its daemon is running.
+On Windows, Docker Desktop must be using Linux containers.
+
+Linux and macOS hosts also need Bash, Git, and either `sha256sum` (common on
+Linux) or `shasum` (included with macOS). Automatic SSH-port selection requires
+one of `lsof`, `ss`, or `nc` on those hosts.
+
+Windows hosts need Windows PowerShell 5.1 or PowerShell 7 and Git. The optional
+`agent tunnel` command also needs the Windows OpenSSH Client feature; current
+Windows installations normally include it.
+
+## Installation
+
+### macOS and Linux
+
+Clone the repository into:
+
+```bash
+git clone https://github.com/magnusviri/agent-container.git ~/.agent-container
+```
+
+Note, installing it at ~/.agent-container makes it easier to to enable persistent auth
+files and other things. This can be configured with environment variables (see below).
+
+Make `agent` available from any directory with:
+
+```bash
+~/.agent-container/agent init
+```
+
+This adds `.agent-container/bin` to `PATH` in the current shell's startup file
+(`~/.bashrc` for Bash or `~/.zshrc` for Zsh) unless the entry is already present.
+Restart your shell or source that file, then use `agent` anywhere.
+
+### Windows installation
+
+The Windows installer is vibe coded. I have not tested it. If you have Windows and are willing to test, please let me know how it goes.
+
+From PowerShell, clone the repository to the default state directory:
+
+```powershell
+git clone https://github.com/magnusviri/agent-container.git "$HOME\.agent-container"
+```
+
+The repository includes native PowerShell launchers and `.cmd` wrappers, so
+Bash, WSL, and executable-bit changes are not required. Run them directly:
+
+```powershell
+& "$HOME\.agent-container\agent.cmd" build
+& "$HOME\.agent-container\agent.cmd" --help
+```
+
+To use `agent` from any new PowerShell or Command Prompt window, add the
+installation directory to your user `PATH` once:
+
+```powershell
+& "$HOME\.agent-container\agent.cmd" init
+```
+
+This adds the install directory to the user `PATH` (like the manual snippet
+below) and prints confirmation. Open a new terminal afterward.
+
+Then open a new terminal. Windows resolves `agent` to `agent.cmd`; its options
+and commands match the Bash launcher. If Docker Desktop prompts to share the
+drive or directory containing a workspace, approve that mount before launching
+the container. The Windows launcher also compensates when Git checks the shared
+instruction symlinks out as plain placeholder files, without modifying the
+checkout.
 
 ## Features
 
-The image includes common coding-agent utilities such as:
+The image provides a consistent toolchain for coding agents, including:
 
 ```text
+Claude Code
+OpenAI Codex
+OpenCode
+
 Python (managed by mise)
 Ruby / Bundler (managed by mise)
 Node.js / npm (managed by mise)
@@ -60,10 +106,6 @@ Prettier (JavaScript, TypeScript, JSON, YAML, and Markdown)
 PSScriptAnalyzer / Invoke-Formatter (PowerShell)
 clang-format (C and C++)
 cmake-format
-
-Claude Code
-OpenAI Codex
-OpenCode
 
 git
 gh
@@ -120,109 +162,6 @@ mise
 Runtime versions are managed by `mise`. An optional `versions.env` file can
 pin versions, request the latest release, or omit individual tools.
 
-## Requirements
-
-Install Docker Engine or Docker Desktop and make sure its daemon is running.
-On Windows, Docker Desktop must be using Linux containers.
-
-Linux and macOS hosts also need Bash, Git, and either `sha256sum` (common on
-Linux) or `shasum` (included with macOS). Automatic SSH-port selection requires
-one of `lsof`, `ss`, or `nc` on those hosts.
-
-Windows hosts need Windows PowerShell 5.1 or PowerShell 7 and Git. The optional
-`agent tunnel` command also needs the Windows OpenSSH Client feature; current
-Windows installations normally include it.
-
-## Installation
-
-### macOS and Linux
-
-Clone the repository into:
-
-```bash
-git clone https://github.com/magnusviri/agent-container.git ~/.agent-container
-```
-
-Note, installing it at ~/.agent-container makes it easier to to enable persistent auth
-files and other things. This can be configured with environment variables (see below).
-
-Make `agent` available from any directory with:
-
-```bash
-./agent init
-```
-
-This creates `agent` and `agent-container` symlinks in `~/.agent-container/bin`
-and appends that directory to `PATH` in `~/.zshrc` when the file exists and the
-entry is not already present. Restart your shell or run `source ~/.zshrc`, then
-use `agent` anywhere. Run `./agent init` again to refresh the shortcuts.
-
-Alternatively, add convenience symlinks manually:
-
-```bash
-mkdir -p ~/.local/bin
-ln -sf ~/.agent-container/agent ~/.local/bin/agent
-```
-
-Ensure `~/.local/bin` is on your `PATH`.
-
-For zsh, add it to `~/.zshrc` automatically:
-
-```bash
-grep -qxF "export PATH=\"\$HOME/.local/bin:\$PATH\"" ~/.zshrc 2>/dev/null || echo "export PATH=\"\$HOME/.local/bin:\$PATH\"" >> ~/.zshrc
-```
-
-For Bash:
-
-```bash
-export PATH="$HOME/.local/bin:$PATH"
-```
-
-You may want to place that in `~/.bashrc`.
-
-### Windows installation
-
-From PowerShell, clone the repository to the default state directory:
-
-```powershell
-git clone https://github.com/magnusviri/agent-container.git "$HOME\.agent-container"
-```
-
-The repository includes native PowerShell launchers and `.cmd` wrappers, so
-Bash, WSL, and executable-bit changes are not required. Run them directly:
-
-```powershell
-& "$HOME\.agent-container\agent.cmd" build
-& "$HOME\.agent-container\agent.cmd" --help
-```
-
-To use `agent` from any new PowerShell or Command Prompt window, add the
-installation directory to your user `PATH` once:
-
-```powershell
-& "$HOME\.agent-container\agent.cmd" init
-```
-
-This adds the install directory to the user `PATH` (like the manual snippet
-below) and prints confirmation. Open a new terminal afterward.
-
-Or add it manually:
-
-```powershell
-$agentHome = "$HOME\.agent-container"
-$userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
-if (($userPath -split ';') -notcontains $agentHome) {
-    [Environment]::SetEnvironmentVariable('Path', "$userPath;$agentHome", 'User')
-}
-```
-
-Then open a new terminal. Windows resolves `agent` to `agent.cmd`; its options
-and commands match the Bash launcher. If Docker Desktop prompts to share the
-drive or directory containing a workspace, approve that mount before launching
-the container. The Windows launcher also compensates when Git checks the shared
-instruction symlinks out as plain placeholder files, without modifying the
-checkout.
-
 ## Building the image
 
 Build the agent image with:
@@ -245,14 +184,14 @@ The project version is stored in [`VERSION`](VERSION). For the current release,
 the default image name is:
 
 ```text
-agent-container:0.1.0
+agent-container:0.1.1
 ```
 
 When starting a container, the launcher prints its OCI image version. This is
 also shown when a stopped workspace container is restarted.
 
 `agent build` tags each default build with both the immutable release tag
-(`agent-container:0.1.0`) and the moving convenience tag
+(`agent-container:0.1.1`) and the moving convenience tag
 (`agent-container:latest`). The launcher uses the release tag by default, so a
 newly published `latest` image does not change the image used by an existing
 checkout. Set `AI_AGENT_IMAGE` to use a custom image name or tag; custom image
@@ -295,6 +234,28 @@ Set-Location "$HOME\src\my-project"
 ```
 
 Then launch an agent.
+
+### Command overview
+
+Launcher options come before the command. Use `--` when the command itself
+starts with an option, for example `agent -- --help`.
+
+| Command | Purpose |
+| --- | --- |
+| `agent` | Start or attach to an interactive Bash shell for this workspace. |
+| `agent codex`, `agent claude`, `agent opencode` | Start the named coding agent. |
+| `agent <command...>` | Run a custom command when creating a new workspace container. Once a container is running, use `agent exec <command...>` instead. |
+| `agent exec [command...]` | Run a command as the unprivileged `agent` user in a running workspace container; no command opens Bash. |
+| `agent root [command...]` | Run a maintenance command as root in a running workspace container; no command opens a root shell. |
+| `agent ralph init` / `agent ralph --tool TOOL [max_iterations]` | Initialize or run the fresh-context Ralph loop. |
+| `agent tunnel` | Open SSH tunnels configured when the container was created with `--forward-port`. |
+| `agent status`, `agent list` (or `agent ls`), `agent stop`, `agent delete` | Inspect or manage workspace containers. |
+| `agent build [docker-build-options...]` / `agent init` | Build the image or install launcher shortcuts. |
+
+`agent` identifies a workspace from its physical current-directory path. Its
+container is reused when it is running or has been kept after stopping. Docker
+port mappings and credential mounts are fixed when a container is created;
+delete the workspace container before changing either.
 
 ### Codex
 
@@ -565,7 +526,7 @@ Example output for a normal shell (no ports published):
 Agent container is running:
   ID:       9f4723ab921d
   Name:     agent-project-a-f359abc71234
-  Image:    agent-container:latest
+  Image:    agent-container:0.1.1
   Status:   Up 12 minutes
   Ports:
 ```
@@ -586,8 +547,8 @@ agent list
 Example output:
 
 ```text
-ID: 9f4723ab921d	Name: agent-project-a-f359abc71234	Image: agent-container:latest	Status: Up 12 minutes	Ports: 127.0.0.1:2222->22/tcp	PWD: /home/me/project-a
-ID: 1a2b3c4d5e6f	Name: agent-project-b-7f8e9d012345	Image: agent-container:latest	Status: Up 3 minutes	Ports:	PWD: /home/me/project-b
+ID: 9f4723ab921d	Name: agent-project-a-f359abc71234	Image: agent-container:0.1.1	Status: Up 12 minutes	Ports: 127.0.0.1:2222->22/tcp	PWD: /home/me/project-a
+ID: 1a2b3c4d5e6f	Name: agent-project-b-7f8e9d012345	Image: agent-container:0.1.1	Status: Up 3 minutes	Ports:	PWD: /home/me/project-b
 ```
 
 ## Stopping a container
@@ -1366,10 +1327,10 @@ directly:
 # workspace:      /home/me/project
 # container name: agent-project-63d66b2564f5
 # hostname:       project-63d66b2564f5
-# image:          agent-container:latest
+# image:          agent-container:0.1.1
 # requested ports: 3000
 Port:  3000 -> container:3000
-+ docker run --interactive --tty --init --name agent-project-63d66b2564f5 --hostname project-63d66b2564f5 ... --publish 3000:3000 agent-container:latest claude
++ docker run --interactive --tty --init --name agent-project-63d66b2564f5 --hostname project-63d66b2564f5 ... --publish 3000:3000 agent-container:0.1.1 claude
 ```
 
 This is the quickest way to confirm which `--publish` flags reached
@@ -1403,7 +1364,7 @@ Controls the Docker image.
 Default (using the version in `VERSION`):
 
 ```text
-agent-container:0.1.0
+agent-container:0.1.1
 ```
 
 Example:
